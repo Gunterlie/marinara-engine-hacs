@@ -12,14 +12,24 @@ from homeassistant.config_entries import ConfigEntry, ConfigFlow, OptionsFlow
 from homeassistant.core import callback
 from homeassistant.data_entry_flow import FlowResult
 
+from homeassistant.helpers.selector import (
+    SelectOptionDict,
+    SelectSelector,
+    SelectSelectorConfig,
+    SelectSelectorMode,
+)
+
 from .const import (
+    CONF_ENABLED_CATEGORIES,
     CONF_HOST,
     CONF_PORT,
     CONF_PRIMARY_CHAT_ID,
     CONF_WEBHOOK_ID,
+    DEFAULT_ENABLED_CATEGORIES,
     DEFAULT_HOST,
     DEFAULT_PORT,
     DOMAIN,
+    TOOL_CATEGORIES,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -117,15 +127,30 @@ class MarinaraOptionsFlow(OptionsFlow):
             self._chats = []
 
         chat_options = {c["id"]: c["name"] for c in self._chats}
-        current = self._config_entry.options.get(CONF_PRIMARY_CHAT_ID, "")
+        current_chat = self._config_entry.options.get(CONF_PRIMARY_CHAT_ID, "")
+        current_cats = self._config_entry.options.get(
+            CONF_ENABLED_CATEGORIES, DEFAULT_ENABLED_CATEGORIES
+        )
 
         schema = vol.Schema(
             {
-                vol.Optional(CONF_PRIMARY_CHAT_ID, default=current): vol.In(
+                vol.Optional(CONF_PRIMARY_CHAT_ID, default=current_chat): vol.In(
                     chat_options
                 )
                 if chat_options
                 else str,
+                vol.Optional(
+                    CONF_ENABLED_CATEGORIES, default=current_cats
+                ): SelectSelector(
+                    SelectSelectorConfig(
+                        options=[
+                            SelectOptionDict(value=k, label=v)
+                            for k, v in TOOL_CATEGORIES.items()
+                        ],
+                        multiple=True,
+                        mode=SelectSelectorMode.LIST,
+                    )
+                ),
             }
         )
 

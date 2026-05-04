@@ -11,7 +11,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.network import NoURLAvailableError, get_url
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import CONF_WEBHOOK_ID, DOMAIN
+from .const import CONF_ENABLED_CATEGORIES, CONF_WEBHOOK_ID, DEFAULT_ENABLED_CATEGORIES, DOMAIN
 from .coordinator import MarinaraCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -83,7 +83,10 @@ class MarinaraSyncToolsButton(CoordinatorEntity[MarinaraCoordinator], ButtonEnti
                 f":{self.hass.config.api.port}"
             )
         webhook_url = f"{base_url}/api/webhook/{webhook_id}"
-        created, skipped = await self.coordinator.sync_tools(webhook_url)
+        enabled_categories = self._entry.options.get(
+            CONF_ENABLED_CATEGORIES, DEFAULT_ENABLED_CATEGORIES
+        )
+        created, skipped = await self.coordinator.sync_tools(webhook_url, enabled_categories)
         _LOGGER.info(
             "Marinara tool sync: %d created, %d already existed", created, skipped
         )

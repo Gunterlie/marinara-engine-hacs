@@ -12,10 +12,12 @@ from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers import config_validation as cv
 
 from .const import (
+    CONF_ENABLED_CATEGORIES,
     CONF_HOST,
     CONF_PORT,
     CONF_PRIMARY_CHAT_ID,
     CONF_WEBHOOK_ID,
+    DEFAULT_ENABLED_CATEGORIES,
     DOMAIN,
 )
 from .coordinator import MarinaraCoordinator
@@ -56,20 +58,26 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     webhook_id: str = entry.data[CONF_WEBHOOK_ID]
     async_register_webhook(hass, webhook_id)
-    hass.http.register_view(MarinaraToolManifestView(webhook_id))
+    hass.http.register_view(MarinaraToolManifestView(webhook_id, entry.entry_id))
 
     _async_register_services(hass, entry, coordinator)
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     # Auto-sync HA tools into Marinara on every startup (idempotent — skips existing)
-    hass.async_create_task(_async_sync_tools(hass, coordinator, webhook_id))
+    enabled_categories = entry.options.get(CONF_ENABLED_CATEGORIES, DEFAULT_ENABLED_CATEGORIES)
+    hass.async_create_task(
+        _async_sync_tools(hass, coordinator, webhook_id, enabled_categories)
+    )
 
     return True
 
 
 async def _async_sync_tools(
-    hass: HomeAssistant, coordinator: MarinaraCoordinator, webhook_id: str
+    hass: HomeAssistant,
+    coordinator: MarinaraCoordinator,
+    webhook_id: str,
+    enabled_categories: list[str],
 ) -> None:
     from homeassistant.helpers.network import NoURLAvailableError, get_url
 
@@ -80,7 +88,7 @@ async def _async_sync_tools(
 
     webhook_url = f"{base_url}/api/webhook/{webhook_id}"
     try:
-        created, skipped = await coordinator.sync_tools(webhook_url)
+        created, skipped = await coordinator.sync_tools(webhook_url, enabled_categories)
         if created:
             _LOGGER.info(
                 "Marinara Engine: synced %d new HA tools (%d already existed)",

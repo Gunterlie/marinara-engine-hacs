@@ -112,17 +112,20 @@ class MarinaraCoordinator(DataUpdateCoordinator[dict]):
             ) as resp:
                 resp.raise_for_status()
 
-    async def sync_tools(self, webhook_url: str) -> tuple[int, int]:
-        """Create or update all HA tool definitions in Marinara.
+    async def sync_tools(
+        self, webhook_url: str, enabled_categories: list[str]
+    ) -> tuple[int, int]:
+        """Create missing HA tool definitions in Marinara for the given categories.
 
         Returns (created, skipped) counts.
         """
-        from .const import TOOL_DEFINITIONS
+        from .const import tools_for_categories
+
+        tools = tools_for_categories(enabled_categories)
 
         async with aiohttp.ClientSession() as session:
             timeout = aiohttp.ClientTimeout(total=10)
 
-            # Fetch existing tools so we can skip duplicates
             async with session.get(
                 f"{self.base_url}/api/custom-tools", timeout=timeout
             ) as resp:
@@ -133,7 +136,7 @@ class MarinaraCoordinator(DataUpdateCoordinator[dict]):
 
             created = 0
             skipped = 0
-            for tool in TOOL_DEFINITIONS:
+            for tool in tools:
                 if tool["name"] in existing_names:
                     skipped += 1
                     continue

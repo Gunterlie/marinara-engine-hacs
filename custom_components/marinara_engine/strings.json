@@ -22,9 +22,13 @@
     "step": {
       "init": {
         "title": "Marinara Engine Options",
-        "description": "Choose the primary chat used by services when no chat_id is specified.",
+        "description": "Choose the primary chat and which tool categories Marinara is allowed to use.",
         "data": {
-          "primary_chat_id": "Primary Chat"
+          "primary_chat_id": "Primary Chat",
+          "enabled_categories": "Exposed Tool Categories"
+        },
+        "data_description": {
+          "enabled_categories": "Only the selected categories will be synced as tools into Marinara Engine. Changes take effect after pressing the Sync HA Tools button or restarting Home Assistant."
         }
       }
     }
