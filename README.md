@@ -6,17 +6,18 @@ Connects [Marinara Engine](https://github.com/Gunterlie/Marinara-Engine) to Home
 
 ## How it works
 
-Marinara Engine supports **custom webhook tools**: when the AI decides to call a tool during generation, it POSTs to a webhook URL. This integration registers that webhook inside Home Assistant, then **automatically pushes all tool definitions into Marinara** with the webhook URL already filled in — you never have to touch a URL manually.
+Marinara Engine supports **custom webhook tools**: when the AI decides to call a tool during generation, it POSTs to a webhook URL and feeds the result back to the language model. This integration:
+
+1. Registers a private webhook endpoint inside Home Assistant
+2. Creates all selected tool definitions in Marinara, pre-filled with that webhook URL
+3. Creates a **Home Assistant agent** in Marinara that lists every HA tool in its enabled tools — making them appear in the chat's Function Calling picker automatically
 
 ```
 Marinara AI  →  calls tool ha_turn_on  →  POST /api/webhook/<id>  →  HA turns on light
 Marinara AI  ←  {"result": "Turned on light.living_room"}          ←  HA responds
 ```
 
-On install, the integration:
-1. Registers a private webhook endpoint inside Home Assistant
-2. Connects to Marinara Engine and creates all selected tool definitions, pre-filled with that webhook URL
-3. From then on, the AI can call any tool naturally in conversation
+Everything happens on first startup. You never copy URLs or configure tools manually.
 
 ## Requirements
 
@@ -39,17 +40,25 @@ On install, the integration:
 1. Go to **Settings → Devices & Services → Add Integration**
 2. Search for **Marinara Engine**
 3. Enter the host and port where Marinara Engine is running (default: `localhost` / `3000`)
-4. Click **Submit** — the integration will connect and automatically sync all tools to Marinara
+4. Click **Submit**
+
+On startup, the integration automatically:
+- Registers a webhook inside Home Assistant
+- Creates all tool definitions in Marinara → **Settings → Custom Tools**
+- Creates a **Home Assistant** agent in Marinara → **Agents** with every HA tool already enabled
 
 ### 3. Done
 
-Your AI characters can now control Home Assistant entities. Open any chat in Marinara and ask your character to turn on a light, change the temperature, or activate a scene.
-
-> **How tools get into Marinara:** The integration automatically calls Marinara's API on startup and creates all enabled tool definitions with the correct webhook URL already set. You can verify this in Marinara under **Settings → Custom Tools** — you should see entries like `ha_turn_on`, `ha_set_color`, etc., each pointing to your Home Assistant instance.
+Open any chat in Marinara. Your AI characters can now turn on lights, adjust the thermostat, play music, and more — they'll do it naturally as the narrative calls for it, without you having to prompt for it explicitly.
 
 ## Configuration
 
-After setup, open the integration's **Configure** menu to set a **Primary Chat** — this is the default chat that the `send_message` and `trigger_generation` HA services will target when no `chat_id` is specified.
+After setup, open the integration's **Configure** menu to:
+
+- Set a **Primary Chat** — the default target for `send_message` and `trigger_generation` HA services
+- Choose **Exposed Tool Categories** — select which categories of HA tools Marinara can use (locks are off by default)
+
+Changes to the category selection take effect after pressing **Marinara Sync HA Tools** or restarting Home Assistant.
 
 ## Entities
 
@@ -60,61 +69,31 @@ After setup, open the integration's **Configure** menu to set a **Primary Chat**
 | Marinara Active Chat | Select | Choose which chat HA services target |
 | Marinara Agent: *name* | Switch | Enable / disable each AI agent globally |
 | Marinara Abort Generation | Button | Cancel any in-flight AI generation |
-| Marinara Sync HA Tools | Button | Re-sync all tool definitions to Marinara |
+| Marinara Sync HA Tools | Button | Re-sync all tool definitions and agent to Marinara |
 
-## Available tools
+## Tool categories
 
-Tools are automatically created in Marinara's **Custom Tools** on install. The AI uses them during generation — you don't need to prompt for them explicitly.
+You can choose which categories to expose in the integration's **Configure** menu. Locks are off by default.
 
-### Lights
-| Tool | Description |
-|------|-------------|
-| `ha_turn_on` | Turn on any entity |
-| `ha_turn_off` | Turn off any entity |
-| `ha_toggle` | Toggle any entity |
-| `ha_set_brightness` | Set brightness (0–100%) |
-| `ha_set_color` | Set RGB color |
-| `ha_set_color_temp` | Set color temperature in Kelvin |
+| Category | Tools |
+|----------|-------|
+| Lights & Switches | `ha_turn_on`, `ha_turn_off`, `ha_toggle`, `ha_set_brightness`, `ha_set_color`, `ha_set_color_temp` |
+| Climate | `ha_set_temperature`, `ha_set_hvac_mode` |
+| Covers (Blinds & Garage) | `ha_open_cover`, `ha_close_cover`, `ha_set_cover_position` |
+| Locks | `ha_lock`, `ha_unlock` |
+| Media Players | `ha_media_play`, `ha_media_pause`, `ha_set_volume` |
+| Scenes & Scripts | `ha_activate_scene`, `ha_run_script` |
+| Query & Generic | `ha_get_state`, `ha_list_entities`, `ha_call_service`, `ha_notify` |
 
-### Climate
-| Tool | Description |
-|------|-------------|
-| `ha_set_temperature` | Set thermostat target temperature |
-| `ha_set_hvac_mode` | Set mode: off, heat, cool, auto, … |
+## The Home Assistant agent
 
-### Covers (blinds, garage doors)
-| Tool | Description |
-|------|-------------|
-| `ha_open_cover` | Open a cover |
-| `ha_close_cover` | Close a cover |
-| `ha_set_cover_position` | Set position 0–100% |
+On first sync the integration creates a **Home Assistant** agent in Marinara (visible under **Agents**). This agent:
 
-### Locks
-| Tool | Description |
-|------|-------------|
-| `ha_lock` | Lock a lock entity |
-| `ha_unlock` | Unlock (with optional code) |
+- Runs in **parallel** during every generation turn
+- Has all enabled HA tools listed in its Function Calling settings
+- Carries a prompt that instructs the AI to act on smart home cues naturally — dimming lights when a character reaches for the switch, adjusting the thermostat when the temperature comes up in conversation, and so on
 
-### Media players
-| Tool | Description |
-|------|-------------|
-| `ha_media_play` | Play (optionally a specific media URL) |
-| `ha_media_pause` | Pause |
-| `ha_set_volume` | Set volume (0.0–1.0) |
-
-### Scenes & scripts
-| Tool | Description |
-|------|-------------|
-| `ha_activate_scene` | Activate a scene |
-| `ha_run_script` | Run a script |
-
-### Query & generic
-| Tool | Description |
-|------|-------------|
-| `ha_get_state` | Get current state and attributes of any entity |
-| `ha_list_entities` | List entities, optionally filtered by domain |
-| `ha_call_service` | Call any HA service with full control |
-| `ha_notify` | Send a notification |
+The agent is idempotent — pressing **Sync HA Tools** again will not create a duplicate. If you change the enabled categories and want the agent's tool list updated, delete the agent in Marinara and press **Sync HA Tools** to recreate it with the new set.
 
 ## HA Services
 
@@ -131,7 +110,7 @@ Send a message to a Marinara chat.
 | `role` | No | `user` / `assistant` / `system` / `narrator` |
 | `trigger_generation` | No | Also trigger an AI response (default: false) |
 
-**Example automation:**
+**Example — notify the AI when someone arrives:**
 ```yaml
 automation:
   trigger:
@@ -156,22 +135,28 @@ Start an AI generation turn in a chat.
 
 ## Re-syncing tools
 
-If you add new tools in a future update or accidentally delete tools from Marinara, press the **Marinara Sync HA Tools** button in the integration's device page. It skips tools that already exist and only creates missing ones.
+Press **Marinara Sync HA Tools** on the integration's device page to push any missing tools and recreate the agent if it was deleted. Tools that already exist are skipped — it's safe to press at any time.
 
 ## Troubleshooting
 
-**Tools not appearing in Marinara**
-Press the **Marinara Sync HA Tools** button, or restart Home Assistant (sync runs automatically on startup). You can verify the tools exist in Marinara under **Settings → Custom Tools**.
+**Tools not appearing in Marinara's Custom Tools**
+Press **Marinara Sync HA Tools**, or restart Home Assistant. Verify under **Settings → Custom Tools** in Marinara.
 
-**Finding the webhook URL manually**
-You shouldn't need this, but if you want to inspect it: go to **Settings → Devices & Services → Marinara Engine** in HA. The webhook ID is stored in the config entry. The full URL follows the pattern:
-```
-http://<homeassistant-ip>:8123/api/webhook/<webhook-id>
-```
-Each tool in Marinara's Custom Tools list already has this URL set as its Webhook URL.
+**Home Assistant agent not showing up in Marinara**
+Press **Marinara Sync HA Tools**. If an agent with type `home_assistant` already exists but is not visible, check the Agents list in Marinara — it may be disabled. The integration only creates the agent once; it does not update an existing one.
+
+**Tools not available in a chat's Function Calling picker**
+The **Home Assistant** agent must be enabled in Marinara (Agents list). If it's there but disabled, enable it. If it's missing entirely, press **Sync HA Tools** to recreate it.
 
 **Webhook calls failing**
 Check that Home Assistant is reachable from the machine running Marinara Engine. If they run on the same machine, the internal URL (`http://localhost:8123`) is used automatically. If Marinara runs on a different device, make sure HA's local network URL is accessible from that device.
 
 **Cannot connect on setup**
 Make sure Marinara Engine is running (`pnpm dev` or the packaged app) and the host/port you entered match where it's actually listening (default: `localhost:3000`).
+
+**Finding the webhook URL manually**
+Go to **Settings → Devices & Services → Marinara Engine** in HA. The webhook ID is stored in the config entry. The full URL follows the pattern:
+```
+http://<homeassistant-ip>:8123/api/webhook/<webhook-id>
+```
+Each tool in Marinara's Custom Tools list already has this URL set.
