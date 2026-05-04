@@ -86,9 +86,9 @@ class MarinaraSyncToolsButton(CoordinatorEntity[MarinaraCoordinator], ButtonEnti
         enabled_categories = self._entry.options.get(
             CONF_ENABLED_CATEGORIES, DEFAULT_ENABLED_CATEGORIES
         )
-        created, skipped = await self.coordinator.sync_tools(webhook_url, enabled_categories)
+        created, updated = await self.coordinator.sync_tools(webhook_url, enabled_categories)
         _LOGGER.info(
-            "Marinara tool sync: %d created, %d already existed", created, skipped
+            "Marinara tool sync: %d created, %d updated", created, updated
         )
         agent_status = await self.coordinator.sync_agent(enabled_categories)
         if agent_status != "unchanged":

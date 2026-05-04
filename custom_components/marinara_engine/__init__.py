@@ -88,13 +88,12 @@ async def _async_sync_tools(
 
     webhook_url = f"{base_url}/api/webhook/{webhook_id}"
     try:
-        created, skipped = await coordinator.sync_tools(webhook_url, enabled_categories)
-        if created:
-            _LOGGER.info(
-                "Marinara Engine: synced %d new HA tools (%d already existed)",
-                created,
-                skipped,
-            )
+        created, updated = await coordinator.sync_tools(webhook_url, enabled_categories)
+        _LOGGER.info(
+            "Marinara Engine: tool sync complete — %d created, %d updated",
+            created,
+            updated,
+        )
         agent_status = await coordinator.sync_agent(enabled_categories)
         if agent_status != "unchanged":
             _LOGGER.info("Marinara Engine: Home Assistant agent %s", agent_status)

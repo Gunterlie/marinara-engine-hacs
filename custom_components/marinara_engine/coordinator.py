@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from datetime import timedelta
 
@@ -107,7 +108,7 @@ class MarinaraCoordinator(DataUpdateCoordinator[dict]):
         async with aiohttp.ClientSession() as session:
             async with session.patch(
                 f"{self.base_url}/api/agents/{agent_id}",
-                json={"enabled": str(enabled).lower()},
+                json={"enabled": enabled},
                 timeout=aiohttp.ClientTimeout(total=10),
             ) as resp:
                 resp.raise_for_status()
@@ -135,10 +136,9 @@ class MarinaraCoordinator(DataUpdateCoordinator[dict]):
             )
 
             if existing is not None:
-                import json as _json
                 settings = existing.get("settings") or {}
                 if isinstance(settings, str):
-                    settings = _json.loads(settings)
+                    settings = json.loads(settings)
                 current_tools = settings.get("enabledTools", [])
                 if set(current_tools) == set(tool_names):
                     return "unchanged"
@@ -155,8 +155,7 @@ class MarinaraCoordinator(DataUpdateCoordinator[dict]):
                 "name": "Home Assistant",
                 "description": (
                     "Controls Home Assistant smart home devices — lights, climate, "
-                    "covers, locks, media players, scenes, and scripts — in response "
-                    "to narrative context."
+                    "covers, locks, media players, scenes, and scripts."
                 ),
                 "phase": "parallel",
                 "enabled": True,
@@ -174,9 +173,10 @@ class MarinaraCoordinator(DataUpdateCoordinator[dict]):
     async def sync_tools(
         self, webhook_url: str, enabled_categories: list[str]
     ) -> tuple[int, int]:
-        """Create missing HA tool definitions in Marinara for the given categories.
+        """Upsert HA tool definitions into Marinara for the given categories.
 
-        Returns (created, skipped) counts.
+        Creates missing tools and updates existing ones so schema changes propagate.
+        Returns (created, updated) counts.
         """
         from .const import tools_for_categories
 
@@ -191,14 +191,11 @@ class MarinaraCoordinator(DataUpdateCoordinator[dict]):
                 resp.raise_for_status()
                 existing = await resp.json()
 
-            existing_names = {t["name"] for t in existing}
+            existing_by_name = {t["name"]: t for t in existing}
 
             created = 0
-            skipped = 0
+            updated = 0
             for tool in tools:
-                if tool["name"] in existing_names:
-                    skipped += 1
-                    continue
                 payload = {
                     "name": tool["name"],
                     "description": tool["description"],
@@ -207,12 +204,22 @@ class MarinaraCoordinator(DataUpdateCoordinator[dict]):
                     "webhookUrl": webhook_url,
                     "enabled": True,
                 }
-                async with session.post(
-                    f"{self.base_url}/api/custom-tools",
-                    json=payload,
-                    timeout=timeout,
-                ) as resp:
-                    resp.raise_for_status()
-                created += 1
+                if tool["name"] in existing_by_name:
+                    tool_id = existing_by_name[tool["name"]]["id"]
+                    async with session.patch(
+                        f"{self.base_url}/api/custom-tools/{tool_id}",
+                        json=payload,
+                        timeout=timeout,
+                    ) as resp:
+                        resp.raise_for_status()
+                    updated += 1
+                else:
+                    async with session.post(
+                        f"{self.base_url}/api/custom-tools",
+                        json=payload,
+                        timeout=timeout,
+                    ) as resp:
+                        resp.raise_for_status()
+                    created += 1
 
-        return created, skipped
+        return created, updated
