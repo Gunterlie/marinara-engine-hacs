@@ -61,7 +61,34 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     _async_register_services(hass, entry, coordinator)
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    # Auto-sync HA tools into Marinara on every startup (idempotent — skips existing)
+    hass.async_create_task(_async_sync_tools(hass, coordinator, webhook_id))
+
     return True
+
+
+async def _async_sync_tools(
+    hass: HomeAssistant, coordinator: MarinaraCoordinator, webhook_id: str
+) -> None:
+    from homeassistant.helpers.network import NoURLAvailableError, get_url
+
+    try:
+        base_url = get_url(hass, allow_internal=True, prefer_external=False)
+    except NoURLAvailableError:
+        base_url = f"http://{hass.config.api.local_ip}:{hass.config.api.port}"
+
+    webhook_url = f"{base_url}/api/webhook/{webhook_id}"
+    try:
+        created, skipped = await coordinator.sync_tools(webhook_url)
+        if created:
+            _LOGGER.info(
+                "Marinara Engine: synced %d new HA tools (%d already existed)",
+                created,
+                skipped,
+            )
+    except Exception as err:
+        _LOGGER.warning("Marinara Engine: could not auto-sync tools: %s", err)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
