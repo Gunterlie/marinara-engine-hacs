@@ -93,7 +93,7 @@ On first sync the integration creates a **Home Assistant** agent in Marinara (vi
 - Has all enabled HA tools listed in its Function Calling settings
 - Carries a prompt that instructs the AI to act on smart home cues naturally — dimming lights when a character reaches for the switch, adjusting the thermostat when the temperature comes up in conversation, and so on
 
-The agent is idempotent — pressing **Sync HA Tools** again will not create a duplicate. If you change the enabled categories and want the agent's tool list updated, delete the agent in Marinara and press **Sync HA Tools** to recreate it with the new set.
+The agent is kept in sync automatically — pressing **Sync HA Tools** after changing the enabled categories will update the agent's tool list in place. No manual deletion needed.
 
 ## HA Services
 
@@ -143,7 +143,7 @@ Press **Marinara Sync HA Tools** on the integration's device page to push any mi
 Press **Marinara Sync HA Tools**, or restart Home Assistant. Verify under **Settings → Custom Tools** in Marinara.
 
 **Home Assistant agent not showing up in Marinara**
-Press **Marinara Sync HA Tools**. If an agent with type `home_assistant` already exists but is not visible, check the Agents list in Marinara — it may be disabled. The integration only creates the agent once; it does not update an existing one.
+Press **Marinara Sync HA Tools**. If it's already in the Agents list but not visible in a chat, it may be disabled — enable it there.
 
 **Tools not available in a chat's Function Calling picker**
 The **Home Assistant** agent must be enabled in Marinara (Agents list). If it's there but disabled, enable it. If it's missing entirely, press **Sync HA Tools** to recreate it.

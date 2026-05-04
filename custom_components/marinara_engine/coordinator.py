@@ -112,10 +112,10 @@ class MarinaraCoordinator(DataUpdateCoordinator[dict]):
             ) as resp:
                 resp.raise_for_status()
 
-    async def sync_agent(self, enabled_categories: list[str]) -> bool:
-        """Create the Home Assistant agent in Marinara if it doesn't exist yet.
+    async def sync_agent(self, enabled_categories: list[str]) -> str:
+        """Create or update the Home Assistant agent in Marinara.
 
-        Returns True if the agent was created, False if it already existed.
+        Returns "created", "updated", or "unchanged".
         """
         from .const import HA_AGENT_PROMPT, tools_for_categories
 
@@ -130,8 +130,21 @@ class MarinaraCoordinator(DataUpdateCoordinator[dict]):
                 resp.raise_for_status()
                 agents = await resp.json()
 
-            if any(a.get("type") == "home_assistant" for a in agents):
-                return False
+            existing = next(
+                (a for a in agents if a.get("type") == "home_assistant"), None
+            )
+
+            if existing is not None:
+                current_tools = (existing.get("settings") or {}).get("enabledTools", [])
+                if set(current_tools) == set(tool_names):
+                    return "unchanged"
+                async with session.patch(
+                    f"{self.base_url}/api/agents/{existing['id']}",
+                    json={"settings": {"enabledTools": tool_names}},
+                    timeout=timeout,
+                ) as resp:
+                    resp.raise_for_status()
+                return "updated"
 
             payload = {
                 "type": "home_assistant",
@@ -152,7 +165,7 @@ class MarinaraCoordinator(DataUpdateCoordinator[dict]):
             ) as resp:
                 resp.raise_for_status()
 
-        return True
+        return "created"
 
     async def sync_tools(
         self, webhook_url: str, enabled_categories: list[str]

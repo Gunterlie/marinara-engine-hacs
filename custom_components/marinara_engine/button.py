@@ -90,6 +90,6 @@ class MarinaraSyncToolsButton(CoordinatorEntity[MarinaraCoordinator], ButtonEnti
         _LOGGER.info(
             "Marinara tool sync: %d created, %d already existed", created, skipped
         )
-        agent_created = await self.coordinator.sync_agent(enabled_categories)
-        if agent_created:
-            _LOGGER.info("Marinara tool sync: created Home Assistant agent")
+        agent_status = await self.coordinator.sync_agent(enabled_categories)
+        if agent_status != "unchanged":
+            _LOGGER.info("Marinara tool sync: Home Assistant agent %s", agent_status)
