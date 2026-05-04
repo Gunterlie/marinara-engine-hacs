@@ -12,6 +12,8 @@ from homeassistant.components.webhook import (
     async_unregister,
 )
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import area_registry as ar_helper
+from homeassistant.helpers import entity_registry as er_helper
 
 from .const import DOMAIN
 
@@ -66,7 +68,7 @@ async def _handle_webhook(
 # ---------------------------------------------------------------------------
 
 def _get_area(hass: HomeAssistant, area_name: str):
-    ar = hass.helpers.area_registry.async_get()
+    ar = ar_helper.async_get(hass)
     area = ar.async_get_area_by_name(area_name)
     if area is None:
         raise ValueError(
@@ -143,7 +145,7 @@ async def _get_state(hass: HomeAssistant, args: dict) -> dict:
 
 
 async def _list_areas(hass: HomeAssistant, args: dict) -> dict:
-    ar = hass.helpers.area_registry.async_get()
+    ar = ar_helper.async_get(hass)
     return {
         "areas": [
             {"id": area.id, "name": area.name}
@@ -156,8 +158,8 @@ async def _list_entities(hass: HomeAssistant, args: dict) -> dict:
     domain_filter: str | None = args.get("domain")
     area_name: str | None = args.get("area_name")
 
-    er = hass.helpers.entity_registry.async_get()
-    ar = hass.helpers.area_registry.async_get()
+    er = er_helper.async_get(hass)
+    ar = ar_helper.async_get(hass)
 
     area_names: dict[str, str] = {a.id: a.name for a in ar.areas.values()}
     entity_areas: dict[str, str | None] = {
