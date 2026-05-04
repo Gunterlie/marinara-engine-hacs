@@ -6,12 +6,17 @@ Connects [Marinara Engine](https://github.com/Gunterlie/Marinara-Engine) to Home
 
 ## How it works
 
-Marinara Engine supports **custom webhook tools**: when the AI decides to call a tool, it sends a POST to a URL you configure. This integration registers that webhook inside Home Assistant and provides 21 ready-made tools (lights, climate, locks, covers, media players, scenes, scripts, and more). On first install, all tools are automatically pushed into Marinara's Custom Tools — no manual setup required.
+Marinara Engine supports **custom webhook tools**: when the AI decides to call a tool during generation, it POSTs to a webhook URL. This integration registers that webhook inside Home Assistant, then **automatically pushes all tool definitions into Marinara** with the webhook URL already filled in — you never have to touch a URL manually.
 
 ```
-Marinara AI  →  calls tool ha_turn_on  →  webhook POST to HA  →  light turns on
-Marinara AI  ←  {"result": "Turned on light.living_room"}  ←  HA responds
+Marinara AI  →  calls tool ha_turn_on  →  POST /api/webhook/<id>  →  HA turns on light
+Marinara AI  ←  {"result": "Turned on light.living_room"}          ←  HA responds
 ```
+
+On install, the integration:
+1. Registers a private webhook endpoint inside Home Assistant
+2. Connects to Marinara Engine and creates all selected tool definitions, pre-filled with that webhook URL
+3. From then on, the AI can call any tool naturally in conversation
 
 ## Requirements
 
@@ -39,6 +44,8 @@ Marinara AI  ←  {"result": "Turned on light.living_room"}  ←  HA responds
 ### 3. Done
 
 Your AI characters can now control Home Assistant entities. Open any chat in Marinara and ask your character to turn on a light, change the temperature, or activate a scene.
+
+> **How tools get into Marinara:** The integration automatically calls Marinara's API on startup and creates all enabled tool definitions with the correct webhook URL already set. You can verify this in Marinara under **Settings → Custom Tools** — you should see entries like `ha_turn_on`, `ha_set_color`, etc., each pointing to your Home Assistant instance.
 
 ## Configuration
 
@@ -154,10 +161,17 @@ If you add new tools in a future update or accidentally delete tools from Marina
 ## Troubleshooting
 
 **Tools not appearing in Marinara**
-Press the **Marinara Sync HA Tools** button, or restart Home Assistant (sync runs automatically on startup).
+Press the **Marinara Sync HA Tools** button, or restart Home Assistant (sync runs automatically on startup). You can verify the tools exist in Marinara under **Settings → Custom Tools**.
+
+**Finding the webhook URL manually**
+You shouldn't need this, but if you want to inspect it: go to **Settings → Devices & Services → Marinara Engine** in HA. The webhook ID is stored in the config entry. The full URL follows the pattern:
+```
+http://<homeassistant-ip>:8123/api/webhook/<webhook-id>
+```
+Each tool in Marinara's Custom Tools list already has this URL set as its Webhook URL.
 
 **Webhook calls failing**
-Check that Home Assistant is reachable from the machine running Marinara Engine. If they're on the same host, the internal URL (`http://localhost:8123`) is used automatically.
+Check that Home Assistant is reachable from the machine running Marinara Engine. If they run on the same machine, the internal URL (`http://localhost:8123`) is used automatically. If Marinara runs on a different device, make sure HA's local network URL is accessible from that device.
 
 **Cannot connect on setup**
-Make sure Marinara Engine is running (`pnpm dev` or the packaged app) and the host/port match what you entered.
+Make sure Marinara Engine is running (`pnpm dev` or the packaged app) and the host/port you entered match where it's actually listening (default: `localhost:3000`).
