@@ -135,7 +135,11 @@ class MarinaraCoordinator(DataUpdateCoordinator[dict]):
             )
 
             if existing is not None:
-                current_tools = (existing.get("settings") or {}).get("enabledTools", [])
+                import json as _json
+                settings = existing.get("settings") or {}
+                if isinstance(settings, str):
+                    settings = _json.loads(settings)
+                current_tools = settings.get("enabledTools", [])
                 if set(current_tools) == set(tool_names):
                     return "unchanged"
                 async with session.patch(
