@@ -61,28 +61,72 @@ async def _handle_webhook(
     return web.json_response(result)
 
 
+# ---------------------------------------------------------------------------
+# Area helpers
+# ---------------------------------------------------------------------------
+
+def _get_area(hass: HomeAssistant, area_name: str):
+    ar = hass.helpers.area_registry.async_get()
+    area = ar.async_get_area_by_name(area_name)
+    if area is None:
+        raise ValueError(
+            f"Area '{area_name}' not found. Call ha_list_areas to see available areas."
+        )
+    return area
+
+
+def _resolve_entity_and_target(
+    hass: HomeAssistant, args: dict
+) -> tuple[str | None, dict | None]:
+    """Return (entity_id, target) — exactly one will be non-None."""
+    entity_id = args.get("entity_id")
+    area_name = args.get("area_name")
+    if entity_id:
+        return entity_id, None
+    if area_name:
+        area = _get_area(hass, area_name)
+        return None, {"area_id": area.id}
+    raise ValueError("Provide entity_id or area_name")
+
+
+# ---------------------------------------------------------------------------
+# Handlers
+# ---------------------------------------------------------------------------
+
 async def _turn_on(hass: HomeAssistant, args: dict) -> dict:
-    entity_id = _require(args, "entity_id")
-    await hass.services.async_call(
-        "homeassistant", "turn_on", {"entity_id": entity_id}, blocking=True
-    )
-    return {"result": f"Turned on {entity_id}"}
+    entity_id, target = _resolve_entity_and_target(hass, args)
+    if entity_id:
+        await hass.services.async_call(
+            "homeassistant", "turn_on", {"entity_id": entity_id}, blocking=True
+        )
+        return {"result": f"Turned on {entity_id}"}
+    domain = args.get("domain", "light")
+    await hass.services.async_call(domain, "turn_on", {}, target=target, blocking=True)
+    return {"result": f"Turned on all {domain} in area"}
 
 
 async def _turn_off(hass: HomeAssistant, args: dict) -> dict:
-    entity_id = _require(args, "entity_id")
-    await hass.services.async_call(
-        "homeassistant", "turn_off", {"entity_id": entity_id}, blocking=True
-    )
-    return {"result": f"Turned off {entity_id}"}
+    entity_id, target = _resolve_entity_and_target(hass, args)
+    if entity_id:
+        await hass.services.async_call(
+            "homeassistant", "turn_off", {"entity_id": entity_id}, blocking=True
+        )
+        return {"result": f"Turned off {entity_id}"}
+    domain = args.get("domain", "light")
+    await hass.services.async_call(domain, "turn_off", {}, target=target, blocking=True)
+    return {"result": f"Turned off all {domain} in area"}
 
 
 async def _toggle(hass: HomeAssistant, args: dict) -> dict:
-    entity_id = _require(args, "entity_id")
-    await hass.services.async_call(
-        "homeassistant", "toggle", {"entity_id": entity_id}, blocking=True
-    )
-    return {"result": f"Toggled {entity_id}"}
+    entity_id, target = _resolve_entity_and_target(hass, args)
+    if entity_id:
+        await hass.services.async_call(
+            "homeassistant", "toggle", {"entity_id": entity_id}, blocking=True
+        )
+        return {"result": f"Toggled {entity_id}"}
+    domain = args.get("domain", "light")
+    await hass.services.async_call(domain, "toggle", {}, target=target, blocking=True)
+    return {"result": f"Toggled all {domain} in area"}
 
 
 async def _get_state(hass: HomeAssistant, args: dict) -> dict:
@@ -98,19 +142,48 @@ async def _get_state(hass: HomeAssistant, args: dict) -> dict:
     }
 
 
-async def _list_entities(hass: HomeAssistant, args: dict) -> dict:
-    domain_filter: str | None = args.get("domain")
-    states = hass.states.async_all(domain_filter)
+async def _list_areas(hass: HomeAssistant, args: dict) -> dict:
+    ar = hass.helpers.area_registry.async_get()
     return {
-        "entities": [
-            {
-                "entity_id": s.entity_id,
-                "state": s.state,
-                "friendly_name": s.attributes.get("friendly_name"),
-            }
-            for s in states
+        "areas": [
+            {"id": area.id, "name": area.name}
+            for area in ar.areas.values()
         ]
     }
+
+
+async def _list_entities(hass: HomeAssistant, args: dict) -> dict:
+    domain_filter: str | None = args.get("domain")
+    area_name: str | None = args.get("area_name")
+
+    er = hass.helpers.entity_registry.async_get()
+    ar = hass.helpers.area_registry.async_get()
+
+    area_names: dict[str, str] = {a.id: a.name for a in ar.areas.values()}
+    entity_areas: dict[str, str | None] = {
+        e.entity_id: e.area_id for e in er.entities.values()
+    }
+
+    area_entity_ids: set[str] | None = None
+    if area_name:
+        area = _get_area(hass, area_name)
+        area_entity_ids = {
+            eid for eid, aid in entity_areas.items() if aid == area.id
+        }
+
+    entities = []
+    for s in hass.states.async_all(domain_filter):
+        if area_entity_ids is not None and s.entity_id not in area_entity_ids:
+            continue
+        area_id = entity_areas.get(s.entity_id)
+        entities.append({
+            "entity_id": s.entity_id,
+            "state": s.state,
+            "friendly_name": s.attributes.get("friendly_name"),
+            "area": area_names.get(area_id) if area_id else None,
+        })
+
+    return {"entities": entities}
 
 
 async def _call_service(hass: HomeAssistant, args: dict) -> dict:
@@ -125,65 +198,59 @@ async def _call_service(hass: HomeAssistant, args: dict) -> dict:
 
 
 async def _set_brightness(hass: HomeAssistant, args: dict) -> dict:
-    entity_id = _require(args, "entity_id")
-    brightness_pct = _require(args, "brightness_pct")
-    await hass.services.async_call(
-        "light",
-        "turn_on",
-        {"entity_id": entity_id, "brightness_pct": float(brightness_pct)},
-        blocking=True,
-    )
-    return {"result": f"Set {entity_id} brightness to {brightness_pct}%"}
+    entity_id, target = _resolve_entity_and_target(hass, args)
+    brightness_pct = float(_require(args, "brightness_pct"))
+    data: dict = {"brightness_pct": brightness_pct}
+    if entity_id:
+        data["entity_id"] = entity_id
+    await hass.services.async_call("light", "turn_on", data, target=target, blocking=True)
+    return {"result": f"Set brightness to {brightness_pct}%"}
 
 
 async def _set_color(hass: HomeAssistant, args: dict) -> dict:
-    entity_id = _require(args, "entity_id")
+    entity_id, target = _resolve_entity_and_target(hass, args)
     r = int(_require(args, "r"))
     g = int(_require(args, "g"))
     b = int(_require(args, "b"))
-    await hass.services.async_call(
-        "light",
-        "turn_on",
-        {"entity_id": entity_id, "rgb_color": [r, g, b]},
-        blocking=True,
-    )
-    return {"result": f"Set {entity_id} color to rgb({r},{g},{b})"}
+    data: dict = {"rgb_color": [r, g, b]}
+    if entity_id:
+        data["entity_id"] = entity_id
+    await hass.services.async_call("light", "turn_on", data, target=target, blocking=True)
+    return {"result": f"Set color to rgb({r},{g},{b})"}
 
 
 async def _set_color_temp(hass: HomeAssistant, args: dict) -> dict:
-    entity_id = _require(args, "entity_id")
+    entity_id, target = _resolve_entity_and_target(hass, args)
     kelvin = int(_require(args, "kelvin"))
-    await hass.services.async_call(
-        "light",
-        "turn_on",
-        {"entity_id": entity_id, "kelvin": kelvin},
-        blocking=True,
-    )
-    return {"result": f"Set {entity_id} color temperature to {kelvin}K"}
+    data: dict = {"kelvin": kelvin}
+    if entity_id:
+        data["entity_id"] = entity_id
+    await hass.services.async_call("light", "turn_on", data, target=target, blocking=True)
+    return {"result": f"Set color temperature to {kelvin}K"}
 
 
 async def _set_temperature(hass: HomeAssistant, args: dict) -> dict:
-    entity_id = _require(args, "entity_id")
+    entity_id, target = _resolve_entity_and_target(hass, args)
     temperature = float(_require(args, "temperature"))
+    data: dict = {"temperature": temperature}
+    if entity_id:
+        data["entity_id"] = entity_id
     await hass.services.async_call(
-        "climate",
-        "set_temperature",
-        {"entity_id": entity_id, "temperature": temperature},
-        blocking=True,
+        "climate", "set_temperature", data, target=target, blocking=True
     )
-    return {"result": f"Set {entity_id} temperature to {temperature}"}
+    return {"result": f"Set temperature to {temperature}"}
 
 
 async def _set_hvac_mode(hass: HomeAssistant, args: dict) -> dict:
-    entity_id = _require(args, "entity_id")
+    entity_id, target = _resolve_entity_and_target(hass, args)
     hvac_mode = _require(args, "hvac_mode")
+    data: dict = {"hvac_mode": hvac_mode}
+    if entity_id:
+        data["entity_id"] = entity_id
     await hass.services.async_call(
-        "climate",
-        "set_hvac_mode",
-        {"entity_id": entity_id, "hvac_mode": hvac_mode},
-        blocking=True,
+        "climate", "set_hvac_mode", data, target=target, blocking=True
     )
-    return {"result": f"Set {entity_id} HVAC mode to {hvac_mode}"}
+    return {"result": f"Set HVAC mode to {hvac_mode}"}
 
 
 async def _activate_scene(hass: HomeAssistant, args: dict) -> dict:
@@ -235,7 +302,7 @@ async def _set_volume(hass: HomeAssistant, args: dict) -> dict:
         {"entity_id": entity_id, "volume_level": volume_level},
         blocking=True,
     )
-    return {"result": f"Set {entity_id} volume to {volume_level}"}
+    return {"result": f"Set volume to {volume_level}"}
 
 
 async def _lock(hass: HomeAssistant, args: dict) -> dict:
@@ -256,31 +323,33 @@ async def _unlock(hass: HomeAssistant, args: dict) -> dict:
 
 
 async def _open_cover(hass: HomeAssistant, args: dict) -> dict:
-    entity_id = _require(args, "entity_id")
-    await hass.services.async_call(
-        "cover", "open_cover", {"entity_id": entity_id}, blocking=True
-    )
-    return {"result": f"Opened {entity_id}"}
+    entity_id, target = _resolve_entity_and_target(hass, args)
+    data: dict = {}
+    if entity_id:
+        data["entity_id"] = entity_id
+    await hass.services.async_call("cover", "open_cover", data, target=target, blocking=True)
+    return {"result": "Opened cover(s)"}
 
 
 async def _close_cover(hass: HomeAssistant, args: dict) -> dict:
-    entity_id = _require(args, "entity_id")
-    await hass.services.async_call(
-        "cover", "close_cover", {"entity_id": entity_id}, blocking=True
-    )
-    return {"result": f"Closed {entity_id}"}
+    entity_id, target = _resolve_entity_and_target(hass, args)
+    data: dict = {}
+    if entity_id:
+        data["entity_id"] = entity_id
+    await hass.services.async_call("cover", "close_cover", data, target=target, blocking=True)
+    return {"result": "Closed cover(s)"}
 
 
 async def _set_cover_position(hass: HomeAssistant, args: dict) -> dict:
-    entity_id = _require(args, "entity_id")
+    entity_id, target = _resolve_entity_and_target(hass, args)
     position = int(_require(args, "position"))
+    data: dict = {"position": position}
+    if entity_id:
+        data["entity_id"] = entity_id
     await hass.services.async_call(
-        "cover",
-        "set_cover_position",
-        {"entity_id": entity_id, "position": position},
-        blocking=True,
+        "cover", "set_cover_position", data, target=target, blocking=True
     )
-    return {"result": f"Set {entity_id} position to {position}%"}
+    return {"result": f"Set cover position to {position}%"}
 
 
 async def _notify(hass: HomeAssistant, args: dict) -> dict:
@@ -301,6 +370,7 @@ _DISPATCH = {
     "ha_turn_off": _turn_off,
     "ha_toggle": _toggle,
     "ha_get_state": _get_state,
+    "ha_list_areas": _list_areas,
     "ha_list_entities": _list_entities,
     "ha_call_service": _call_service,
     "ha_set_brightness": _set_brightness,
