@@ -111,3 +111,46 @@ class MarinaraCoordinator(DataUpdateCoordinator[dict]):
                 timeout=aiohttp.ClientTimeout(total=10),
             ) as resp:
                 resp.raise_for_status()
+
+    async def sync_tools(self, webhook_url: str) -> tuple[int, int]:
+        """Create or update all HA tool definitions in Marinara.
+
+        Returns (created, skipped) counts.
+        """
+        from .const import TOOL_DEFINITIONS
+
+        async with aiohttp.ClientSession() as session:
+            timeout = aiohttp.ClientTimeout(total=10)
+
+            # Fetch existing tools so we can skip duplicates
+            async with session.get(
+                f"{self.base_url}/api/custom-tools", timeout=timeout
+            ) as resp:
+                resp.raise_for_status()
+                existing = await resp.json()
+
+            existing_names = {t["name"] for t in existing}
+
+            created = 0
+            skipped = 0
+            for tool in TOOL_DEFINITIONS:
+                if tool["name"] in existing_names:
+                    skipped += 1
+                    continue
+                payload = {
+                    "name": tool["name"],
+                    "description": tool["description"],
+                    "parametersSchema": tool["parametersSchema"],
+                    "executionType": "webhook",
+                    "webhookUrl": webhook_url,
+                    "enabled": True,
+                }
+                async with session.post(
+                    f"{self.base_url}/api/custom-tools",
+                    json=payload,
+                    timeout=timeout,
+                ) as resp:
+                    resp.raise_for_status()
+                created += 1
+
+        return created, skipped
