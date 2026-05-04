@@ -379,8 +379,10 @@ TOOL_DEFINITIONS = [
         "name": "ha_list_entities",
         "category": "query",
         "description": (
-            "List Home Assistant entities. Each result includes the area/room the entity belongs to. "
-            "Filter by domain and/or area_name to narrow results."
+            "List Home Assistant entities. Internal/diagnostic domains (update, device_tracker, "
+            "person, zone, sun, weather, automation) and hidden/disabled entities are excluded by default. "
+            "Use domain and/or area_name to narrow results further. "
+            "Returns up to `limit` entities (default 100) plus a `total` count so you know if results were truncated."
         ),
         "parametersSchema": {
             "type": "object",
@@ -392,6 +394,10 @@ TOOL_DEFINITIONS = [
                 "area_name": {
                     "type": "string",
                     "description": "Optional area name filter, e.g. Büro — returns only entities in that room",
+                },
+                "limit": {
+                    "type": "number",
+                    "description": "Maximum number of entities to return (default: 100, max: 500)",
                 },
             },
         },

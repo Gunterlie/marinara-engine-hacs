@@ -45,7 +45,27 @@ class MarinaraCoordinator(DataUpdateCoordinator[dict]):
                     resp.raise_for_status()
                     agents = await resp.json()
 
-            return {"chats": chats, "agents": agents}
+                async with session.get(
+                    f"{self.base_url}/api/app-settings/ui", timeout=timeout
+                ) as resp:
+                    resp.raise_for_status()
+                    ui_settings_raw = await resp.json()
+
+            user_status = "active"
+            user_activity = ""
+            try:
+                blob = json.loads(ui_settings_raw.get("value") or "{}")
+                user_status = blob.get("userStatusManual", "active")
+                user_activity = blob.get("userActivity", "")
+            except Exception:
+                pass
+
+            return {
+                "chats": chats,
+                "agents": agents,
+                "userStatusManual": user_status,
+                "userActivity": user_activity,
+            }
         except aiohttp.ClientConnectionError as err:
             raise UpdateFailed(f"Cannot reach Marinara Engine: {err}") from err
         except aiohttp.ClientResponseError as err:
@@ -88,7 +108,8 @@ class MarinaraCoordinator(DataUpdateCoordinator[dict]):
                     "chatId": chat_id,
                     "userMessage": user_message,
                     "streaming": False,
-                    "userStatus": "active",
+                    "userStatus": self.data.get("userStatusManual", "active") if self.data else "active",
+                    "userActivity": self.data.get("userActivity", "") if self.data else "",
                 },
                 timeout=aiohttp.ClientTimeout(total=120),
             ) as resp:
@@ -102,6 +123,34 @@ class MarinaraCoordinator(DataUpdateCoordinator[dict]):
                 timeout=aiohttp.ClientTimeout(total=5),
             ) as resp:
                 resp.raise_for_status()
+
+    async def _update_ui_settings(self, patch: dict) -> None:
+        """Read-modify-write a subset of /api/app-settings/ui."""
+        async with aiohttp.ClientSession() as session:
+            timeout = aiohttp.ClientTimeout(total=10)
+            async with session.get(
+                f"{self.base_url}/api/app-settings/ui", timeout=timeout
+            ) as resp:
+                resp.raise_for_status()
+                raw = await resp.json()
+            try:
+                blob = json.loads(raw.get("value") or "{}")
+            except Exception:
+                blob = {}
+            blob.update(patch)
+            async with session.put(
+                f"{self.base_url}/api/app-settings/ui",
+                json={"value": json.dumps(blob)},
+                timeout=timeout,
+            ) as resp:
+                resp.raise_for_status()
+        await self.async_refresh()
+
+    async def set_user_status(self, status: str) -> None:
+        await self._update_ui_settings({"userStatusManual": status})
+
+    async def set_user_activity(self, activity: str) -> None:
+        await self._update_ui_settings({"userActivity": activity[:120]})
 
     async def set_agent_enabled(self, agent_id: str, enabled: bool) -> None:
         """Toggle global enabled state for an agent."""

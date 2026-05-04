@@ -131,15 +131,44 @@ async def _toggle(hass: HomeAssistant, args: dict) -> dict:
     return {"result": f"Toggled all {domain} in area"}
 
 
+_STATE_ATTRS: dict[str, frozenset[str]] = {
+    "light": frozenset({
+        "brightness", "color_mode", "rgb_color", "color_temp_kelvin", "hs_color", "effect",
+    }),
+    "climate": frozenset({
+        "current_temperature", "temperature", "hvac_mode", "hvac_modes",
+        "hvac_action", "preset_mode", "preset_modes", "fan_mode", "fan_modes",
+    }),
+    "media_player": frozenset({
+        "media_title", "media_artist", "media_album_name", "volume_level",
+        "source", "source_list", "is_volume_muted", "media_content_type",
+    }),
+    "cover": frozenset({"current_position", "current_tilt_position"}),
+    "fan": frozenset({"percentage", "preset_mode", "preset_modes", "oscillating", "direction"}),
+    "sensor": frozenset({"unit_of_measurement", "device_class", "state_class"}),
+    "binary_sensor": frozenset({"device_class"}),
+    "vacuum": frozenset({"battery_level", "fan_speed", "status"}),
+    "alarm_control_panel": frozenset({"code_format", "changed_by"}),
+}
+
+
 async def _get_state(hass: HomeAssistant, args: dict) -> dict:
     entity_id = _require(args, "entity_id")
     state = hass.states.get(entity_id)
     if state is None:
         return {"error": f"Entity '{entity_id}' not found"}
+
+    domain = entity_id.split(".")[0]
+    allowed = _STATE_ATTRS.get(domain)
+    if allowed is not None:
+        attrs = {k: v for k, v in state.attributes.items() if k in allowed or k == "friendly_name"}
+    else:
+        attrs = dict(state.attributes)
+
     return {
         "entity_id": entity_id,
         "state": state.state,
-        "attributes": dict(state.attributes),
+        "attributes": attrs,
         "last_updated": state.last_updated.isoformat(),
     }
 
@@ -154,30 +183,43 @@ async def _list_areas(hass: HomeAssistant, args: dict) -> dict:
     }
 
 
+_SKIP_DOMAINS: frozenset[str] = frozenset({
+    "update", "device_tracker", "person", "zone", "sun",
+    "weather", "persistent_notification", "automation",
+})
+
+
 async def _list_entities(hass: HomeAssistant, args: dict) -> dict:
     domain_filter: str | None = args.get("domain")
     area_name: str | None = args.get("area_name")
+    limit: int = min(int(args.get("limit", 100)), 500)
 
     er = er_helper.async_get(hass)
     ar = ar_helper.async_get(hass)
 
     area_names: dict[str, str] = {a.id: a.name for a in ar.areas.values()}
-    entity_areas: dict[str, str | None] = {
-        e.entity_id: e.area_id for e in er.entities.values()
-    }
+    entity_reg = {e.entity_id: e for e in er.entities.values()}
 
     area_entity_ids: set[str] | None = None
     if area_name:
         area = _get_area(hass, area_name)
         area_entity_ids = {
-            eid for eid, aid in entity_areas.items() if aid == area.id
+            e.entity_id for e in er.entities.values() if e.area_id == area.id
         }
 
     entities = []
     for s in hass.states.async_all(domain_filter):
+        entry = entity_reg.get(s.entity_id)
+        if entry and (entry.hidden_by or entry.disabled_by):
+            continue
+
+        if not domain_filter and s.entity_id.split(".")[0] in _SKIP_DOMAINS:
+            continue
+
         if area_entity_ids is not None and s.entity_id not in area_entity_ids:
             continue
-        area_id = entity_areas.get(s.entity_id)
+
+        area_id = entry.area_id if entry else None
         entities.append({
             "entity_id": s.entity_id,
             "state": s.state,
@@ -185,7 +227,12 @@ async def _list_entities(hass: HomeAssistant, args: dict) -> dict:
             "area": area_names.get(area_id) if area_id else None,
         })
 
-    return {"entities": entities}
+    total = len(entities)
+    return {
+        "entities": entities[:limit],
+        "total": total,
+        "returned": min(total, limit),
+    }
 
 
 async def _call_service(hass: HomeAssistant, args: dict) -> dict:
