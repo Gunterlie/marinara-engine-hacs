@@ -95,6 +95,9 @@ async def _async_sync_tools(
                 created,
                 skipped,
             )
+        agent_created = await coordinator.sync_agent(enabled_categories)
+        if agent_created:
+            _LOGGER.info("Marinara Engine: created Home Assistant agent")
     except Exception as err:
         _LOGGER.warning("Marinara Engine: could not auto-sync tools: %s", err)
 

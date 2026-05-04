@@ -112,6 +112,48 @@ class MarinaraCoordinator(DataUpdateCoordinator[dict]):
             ) as resp:
                 resp.raise_for_status()
 
+    async def sync_agent(self, enabled_categories: list[str]) -> bool:
+        """Create the Home Assistant agent in Marinara if it doesn't exist yet.
+
+        Returns True if the agent was created, False if it already existed.
+        """
+        from .const import HA_AGENT_PROMPT, tools_for_categories
+
+        tool_names = [t["name"] for t in tools_for_categories(enabled_categories)]
+
+        async with aiohttp.ClientSession() as session:
+            timeout = aiohttp.ClientTimeout(total=10)
+
+            async with session.get(
+                f"{self.base_url}/api/agents", timeout=timeout
+            ) as resp:
+                resp.raise_for_status()
+                agents = await resp.json()
+
+            if any(a.get("type") == "home_assistant" for a in agents):
+                return False
+
+            payload = {
+                "type": "home_assistant",
+                "name": "Home Assistant",
+                "description": (
+                    "Controls Home Assistant smart home devices — lights, climate, "
+                    "covers, locks, media players, scenes, and scripts — in response "
+                    "to narrative context."
+                ),
+                "phase": "parallel",
+                "enabled": True,
+                "connectionId": None,
+                "promptTemplate": HA_AGENT_PROMPT,
+                "settings": {"enabledTools": tool_names},
+            }
+            async with session.post(
+                f"{self.base_url}/api/agents", json=payload, timeout=timeout
+            ) as resp:
+                resp.raise_for_status()
+
+        return True
+
     async def sync_tools(
         self, webhook_url: str, enabled_categories: list[str]
     ) -> tuple[int, int]:
