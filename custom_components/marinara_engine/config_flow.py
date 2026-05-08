@@ -113,7 +113,10 @@ class MarinaraOptionsFlow(OptionsFlow):
         self, user_input: dict | None = None
     ) -> FlowResult:
         if user_input is not None:
-            return self.async_create_entry(title="", data=user_input)
+            data = dict(user_input)
+            if CONF_ADMIN_SECRET in data and isinstance(data[CONF_ADMIN_SECRET], str):
+                data[CONF_ADMIN_SECRET] = data[CONF_ADMIN_SECRET].strip()
+            return self.async_create_entry(title="", data=data)
 
         host = self._config_entry.data[CONF_HOST]
         port = self._config_entry.data[CONF_PORT]

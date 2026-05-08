@@ -22,7 +22,7 @@ class MarinaraCoordinator(DataUpdateCoordinator[dict]):
 
     def __init__(self, hass: HomeAssistant, host: str, port: int, admin_secret: str | None = None) -> None:
         self.base_url = f"http://{host}:{port}"
-        self._admin_secret = admin_secret
+        self._admin_secret = (admin_secret or "").strip() or None
         super().__init__(
             hass,
             _LOGGER,
@@ -70,7 +70,16 @@ class MarinaraCoordinator(DataUpdateCoordinator[dict]):
     @property
     def _privileged_headers(self) -> dict:
         if self._admin_secret:
+            _LOGGER.debug(
+                "Sending X-Admin-Secret header (length=%d, first_char=%r)",
+                len(self._admin_secret),
+                self._admin_secret[0],
+            )
             return {"X-Admin-Secret": self._admin_secret}
+        _LOGGER.warning(
+            "No admin_secret configured — privileged API calls will fail; "
+            "set Admin Secret in Settings → Devices & Services → Marinara Engine → Configure"
+        )
         return {}
 
     async def async_verify_connection(self) -> None:
