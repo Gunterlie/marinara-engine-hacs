@@ -18,6 +18,7 @@ CONF_PORT = "port"
 CONF_WEBHOOK_ID = "webhook_id"
 CONF_PRIMARY_CHAT_ID = "primary_chat_id"
 CONF_ENABLED_CATEGORIES = "enabled_categories"
+CONF_ADMIN_SECRET = "admin_secret"
 
 CONTROLLABLE_DOMAINS: frozenset[str] = frozenset({
     "light", "switch", "climate", "cover", "media_player",

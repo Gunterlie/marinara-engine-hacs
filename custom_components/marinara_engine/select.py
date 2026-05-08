@@ -18,10 +18,7 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     coordinator: MarinaraCoordinator = hass.data[DOMAIN][entry.entry_id]
-    async_add_entities([
-        MarinaraActiveChatSelect(coordinator, entry),
-        MarinaraUserStatusSelect(coordinator, entry),
-    ])
+    async_add_entities([MarinaraActiveChatSelect(coordinator, entry)])
 
 
 class MarinaraActiveChatSelect(CoordinatorEntity[MarinaraCoordinator], SelectEntity):
@@ -68,30 +65,3 @@ class MarinaraActiveChatSelect(CoordinatorEntity[MarinaraCoordinator], SelectEnt
                 return
 
 
-class MarinaraUserStatusSelect(CoordinatorEntity[MarinaraCoordinator], SelectEntity):
-    """Select the user's presence status in Marinara (active / idle / dnd)."""
-
-    _attr_icon = "mdi:account-circle-outline"
-    _attr_options = ["active", "idle", "dnd"]
-
-    def __init__(self, coordinator: MarinaraCoordinator, entry: ConfigEntry) -> None:
-        super().__init__(coordinator)
-        self._entry = entry
-        self._attr_unique_id = f"{entry.entry_id}_user_status"
-        self._attr_name = "Marinara User Status"
-
-    @property
-    def device_info(self) -> dict:
-        return {
-            "identifiers": {(DOMAIN, self._entry.entry_id)},
-            "name": "Marinara Engine",
-            "manufacturer": "Marinara Engine",
-            "model": "Local AI Engine",
-        }
-
-    @property
-    def current_option(self) -> str:
-        return self.coordinator.data.get("userStatusManual", "active")
-
-    async def async_select_option(self, option: str) -> None:
-        await self.coordinator.set_user_status(option)

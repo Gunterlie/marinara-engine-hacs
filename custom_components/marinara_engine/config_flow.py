@@ -20,6 +20,7 @@ from homeassistant.helpers.selector import (
 )
 
 from .const import (
+    CONF_ADMIN_SECRET,
     CONF_ENABLED_CATEGORIES,
     CONF_HOST,
     CONF_PORT,
@@ -131,6 +132,7 @@ class MarinaraOptionsFlow(OptionsFlow):
         current_cats = self._config_entry.options.get(
             CONF_ENABLED_CATEGORIES, DEFAULT_ENABLED_CATEGORIES
         )
+        current_admin_secret = self._config_entry.options.get(CONF_ADMIN_SECRET, "")
 
         schema = vol.Schema(
             {
@@ -151,6 +153,7 @@ class MarinaraOptionsFlow(OptionsFlow):
                         mode=SelectSelectorMode.LIST,
                     )
                 ),
+                vol.Optional(CONF_ADMIN_SECRET, default=current_admin_secret): str,
             }
         )
 

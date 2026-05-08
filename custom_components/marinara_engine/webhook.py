@@ -60,6 +60,10 @@ async def _handle_webhook(
         _LOGGER.error("Marinara webhook: tool '%s' failed: %s", tool, err)
         return web.json_response({"error": str(err)}, status=500)
 
+    hass.bus.async_fire(
+        f"{DOMAIN}_tool_called",
+        {"tool": tool, "arguments": args, "result": result},
+    )
     return web.json_response(result)
 
 

@@ -12,6 +12,7 @@ from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers import config_validation as cv
 
 from .const import (
+    CONF_ADMIN_SECRET,
     CONF_ENABLED_CATEGORIES,
     CONF_HOST,
     CONF_PORT,
@@ -49,7 +50,10 @@ TRIGGER_GENERATION_SCHEMA = vol.Schema(
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     coordinator = MarinaraCoordinator(
-        hass, entry.data[CONF_HOST], entry.data[CONF_PORT]
+        hass,
+        entry.data[CONF_HOST],
+        entry.data[CONF_PORT],
+        admin_secret=entry.options.get(CONF_ADMIN_SECRET) or None,
     )
     await coordinator.async_verify_connection()
     await coordinator.async_config_entry_first_refresh()
@@ -63,6 +67,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     _async_register_services(hass, entry, coordinator)
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    entry.async_on_unload(entry.add_update_listener(_async_reload_on_options_change))
 
     # Auto-sync HA tools into Marinara on every startup (idempotent — skips existing)
     enabled_categories = entry.options.get(CONF_ENABLED_CATEGORIES, DEFAULT_ENABLED_CATEGORIES)
@@ -99,6 +104,10 @@ async def _async_sync_tools(
             _LOGGER.info("Marinara Engine: Home Assistant agent %s", agent_status)
     except Exception as err:
         _LOGGER.warning("Marinara Engine: could not auto-sync tools: %s", err)
+
+
+async def _async_reload_on_options_change(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    await hass.config_entries.async_reload(entry.entry_id)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

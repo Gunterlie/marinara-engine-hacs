@@ -25,10 +25,12 @@
         "description": "Choose the primary chat and which tool categories Marinara is allowed to use.",
         "data": {
           "primary_chat_id": "Primary Chat",
-          "enabled_categories": "Exposed Tool Categories"
+          "enabled_categories": "Exposed Tool Categories",
+          "admin_secret": "Admin Secret"
         },
         "data_description": {
-          "enabled_categories": "Only the selected categories will be synced as tools into Marinara Engine. Changes take effect after pressing the Sync HA Tools button or restarting Home Assistant."
+          "enabled_categories": "Only the selected categories will be synced as tools into Marinara Engine. Changes take effect after pressing the Sync HA Tools button or restarting Home Assistant.",
+          "admin_secret": "The ADMIN_SECRET value from Marinara Engine's .env file. Required when Marinara is not running on loopback. Leave empty if not set."
         }
       }
     }

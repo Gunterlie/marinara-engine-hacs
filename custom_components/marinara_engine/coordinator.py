@@ -20,8 +20,9 @@ _LOGGER = logging.getLogger(__name__)
 class MarinaraCoordinator(DataUpdateCoordinator[dict]):
     """Polls Marinara Engine for chats and agents."""
 
-    def __init__(self, hass: HomeAssistant, host: str, port: int) -> None:
+    def __init__(self, hass: HomeAssistant, host: str, port: int, admin_secret: str | None = None) -> None:
         self.base_url = f"http://{host}:{port}"
+        self._admin_secret = admin_secret
         super().__init__(
             hass,
             _LOGGER,
@@ -51,27 +52,26 @@ class MarinaraCoordinator(DataUpdateCoordinator[dict]):
                     resp.raise_for_status()
                     ui_settings_raw = await resp.json()
 
-            user_status = "active"
             user_activity = ""
             try:
                 blob = json.loads(ui_settings_raw.get("value") or "{}")
-                user_status = blob.get("userStatusManual", "active")
                 user_activity = blob.get("userActivity", "")
             except Exception:
                 pass
 
-            return {
-                "chats": chats,
-                "agents": agents,
-                "userStatusManual": user_status,
-                "userActivity": user_activity,
-            }
+            return {"chats": chats, "agents": agents, "userActivity": user_activity}
         except aiohttp.ClientConnectionError as err:
             raise UpdateFailed(f"Cannot reach Marinara Engine: {err}") from err
         except aiohttp.ClientResponseError as err:
             raise UpdateFailed(f"Marinara Engine returned error {err.status}") from err
         except Exception as err:
             raise UpdateFailed(f"Unexpected error: {err}") from err
+
+    @property
+    def _privileged_headers(self) -> dict:
+        if self._admin_secret:
+            return {"X-Admin-Secret": self._admin_secret}
+        return {}
 
     async def async_verify_connection(self) -> None:
         """Raise ConfigEntryNotReady if the server is unreachable."""
@@ -108,8 +108,6 @@ class MarinaraCoordinator(DataUpdateCoordinator[dict]):
                     "chatId": chat_id,
                     "userMessage": user_message,
                     "streaming": False,
-                    "userStatus": self.data.get("userStatusManual", "active") if self.data else "active",
-                    "userActivity": self.data.get("userActivity", "") if self.data else "",
                 },
                 timeout=aiohttp.ClientTimeout(total=120),
             ) as resp:
@@ -125,7 +123,6 @@ class MarinaraCoordinator(DataUpdateCoordinator[dict]):
                 resp.raise_for_status()
 
     async def _update_ui_settings(self, patch: dict) -> None:
-        """Read-modify-write a subset of /api/app-settings/ui."""
         async with aiohttp.ClientSession() as session:
             timeout = aiohttp.ClientTimeout(total=10)
             async with session.get(
@@ -145,9 +142,6 @@ class MarinaraCoordinator(DataUpdateCoordinator[dict]):
             ) as resp:
                 resp.raise_for_status()
         await self.async_refresh()
-
-    async def set_user_status(self, status: str) -> None:
-        await self._update_ui_settings({"userStatusManual": status})
 
     async def set_user_activity(self, activity: str) -> None:
         await self._update_ui_settings({"userActivity": activity[:120]})
@@ -265,6 +259,7 @@ class MarinaraCoordinator(DataUpdateCoordinator[dict]):
                     async with session.patch(
                         f"{self.base_url}/api/custom-tools/{tool_id}",
                         json=payload,
+                        headers=self._privileged_headers,
                         timeout=timeout,
                     ) as resp:
                         resp.raise_for_status()
@@ -273,6 +268,7 @@ class MarinaraCoordinator(DataUpdateCoordinator[dict]):
                     async with session.post(
                         f"{self.base_url}/api/custom-tools",
                         json=payload,
+                        headers=self._privileged_headers,
                         timeout=timeout,
                     ) as resp:
                         resp.raise_for_status()
