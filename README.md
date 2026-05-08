@@ -23,7 +23,7 @@ Everything happens on first startup. You never copy URLs or configure tools manu
 
 - Home Assistant 2024.1 or newer
 - [HACS](https://hacs.xyz) installed
-- [Marinara Engine](https://github.com/Gunterlie/Marinara-Engine) running locally (default: `localhost:3000`)
+- [Marinara Engine](https://github.com/Gunterlie/Marinara-Engine) running locally (default: `localhost:7860`)
 
 ## Installation
 
@@ -39,7 +39,7 @@ Everything happens on first startup. You never copy URLs or configure tools manu
 
 1. Go to **Settings → Devices & Services → Add Integration**
 2. Search for **Marinara Engine**
-3. Enter the host and port where Marinara Engine is running (default: `localhost` / `3000`)
+3. Enter the host and port where Marinara Engine is running (default: `localhost` / `7860`)
 4. Click **Submit**
 
 On startup, the integration automatically:
@@ -57,8 +57,19 @@ After setup, open the integration's **Configure** menu to:
 
 - Set a **Primary Chat** — the default target for `send_message` and `trigger_generation` HA services
 - Choose **Exposed Tool Categories** — select which categories of HA tools Marinara can use (locks are off by default)
+- Set an **Admin Secret** — required if you have `ADMIN_SECRET` set in Marinara's `.env` (see below)
 
-Changes to the category selection take effect after pressing **Marinara Sync HA Tools** or restarting Home Assistant.
+Changes take effect immediately after saving — no HA restart needed.
+
+## Admin Secret
+
+Marinara Engine requires an `ADMIN_SECRET` for privileged API calls (creating and updating tools) when accessed from a non-loopback address. If you see **403 Forbidden** errors when pressing **Sync HA Tools**, you need to configure this:
+
+1. Open Marinara's `.env` file and note the value of `ADMIN_SECRET`
+2. In HA, go to **Settings → Devices & Services → Marinara Engine → Configure**
+3. Enter the value in the **Admin Secret** field and save
+
+If Marinara runs on the same machine as Home Assistant and is accessed via `localhost`, no Admin Secret is needed.
 
 ## Entities
 
@@ -67,6 +78,7 @@ Changes to the category selection take effect after pressing **Marinara Sync HA 
 | Marinara Chat Count | Sensor | Total number of chats |
 | Marinara Active Agent Count | Sensor | Number of globally enabled agents |
 | Marinara Active Chat | Select | Choose which chat HA services target |
+| Marinara User Activity | Text | Free-text activity string sent with every AI generation as context |
 | Marinara Agent: *name* | Switch | Enable / disable each AI agent globally |
 | Marinara Abort Generation | Button | Cancel any in-flight AI generation |
 | Marinara Sync HA Tools | Button | Re-sync all tool definitions and agent to Marinara |
@@ -133,11 +145,42 @@ Start an AI generation turn in a chat.
 | `chat_id` | No | Target chat ID (defaults to primary chat) |
 | `user_message` | No | Optional user message to include |
 
+## Events
+
+The integration fires a Home Assistant event every time Marinara calls a tool via the webhook:
+
+**Event type:** `marinara_engine_tool_called`
+
+**Event data:**
+| Field | Description |
+|-------|-------------|
+| `tool` | Tool name, e.g. `ha_turn_on` |
+| `arguments` | Arguments the AI passed to the tool |
+| `result` | The result returned to Marinara |
+
+Use this in automations to react to AI-driven device control — for example, logging every tool call, showing a dashboard notification, or triggering a chime when a lock is accessed.
+
+```yaml
+automation:
+  trigger:
+    platform: event
+    event_type: marinara_engine_tool_called
+    event_data:
+      tool: ha_turn_on
+  action:
+    service: notify.mobile_app
+    data:
+      message: "AI turned something on: {{ trigger.event.data.arguments }}"
+```
+
 ## Re-syncing tools
 
-Press **Marinara Sync HA Tools** on the integration's device page to push any missing tools and recreate the agent if it was deleted. Tools that already exist are skipped — it's safe to press at any time.
+Press **Marinara Sync HA Tools** on the integration's device page to push any missing tools and recreate the agent if it was deleted. Tools that already exist are updated in place — it's safe to press at any time.
 
 ## Troubleshooting
+
+**Sync HA Tools returns 403 Forbidden**
+Marinara's API requires authentication for write operations from non-loopback addresses. Set `ADMIN_SECRET` in Marinara's `.env`, then enter the same value in the integration's **Configure → Admin Secret** field.
 
 **Tools not appearing in Marinara's Custom Tools**
 Press **Marinara Sync HA Tools**, or restart Home Assistant. Verify under **Settings → Custom Tools** in Marinara.
@@ -152,7 +195,7 @@ The **Home Assistant** agent must be enabled in Marinara (Agents list). If it's 
 Check that Home Assistant is reachable from the machine running Marinara Engine. If they run on the same machine, the internal URL (`http://localhost:8123`) is used automatically. If Marinara runs on a different device, make sure HA's local network URL is accessible from that device.
 
 **Cannot connect on setup**
-Make sure Marinara Engine is running (`pnpm dev` or the packaged app) and the host/port you entered match where it's actually listening (default: `localhost:3000`).
+Make sure Marinara Engine is running (`pnpm dev` or the packaged app) and the host/port you entered match where it's actually listening (default: `localhost:7860`).
 
 **Finding the webhook URL manually**
 Go to **Settings → Devices & Services → Marinara Engine** in HA. The webhook ID is stored in the config entry. The full URL follows the pattern:
