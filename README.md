@@ -63,6 +63,8 @@ Changes take effect immediately after saving — no HA restart needed.
 
 ## Admin Secret
 
+> **⚠️ Not working yet** — The Admin Secret flow is currently being debugged. If Marinara is on a non-loopback address and `ADMIN_SECRET` is set, Sync HA Tools will return 403. Workaround: run Marinara on the same machine as Home Assistant and access it via `localhost`.
+
 Marinara Engine requires an `ADMIN_SECRET` for privileged API calls (creating and updating tools) when accessed from a non-loopback address. If you see **403 Forbidden** errors when pressing **Sync HA Tools**, you need to configure this:
 
 1. Open Marinara's `.env` file and note the value of `ADMIN_SECRET`
