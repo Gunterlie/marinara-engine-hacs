@@ -15,7 +15,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import area_registry as ar_helper
 from homeassistant.helpers import entity_registry as er_helper
 
-from .const import DOMAIN
+from .const import CONTROLLABLE_DOMAINS, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -77,18 +77,153 @@ def _get_area(hass: HomeAssistant, area_name: str):
     return area
 
 
+def _score_entity(query: str, entity_id: str, friendly_name: str) -> int:
+    """Score how well a query matches an entity. Higher = better match."""
+    if not query:
+        return 0
+
+    q = query.lower().strip()
+    eid = entity_id.lower()
+    fname = friendly_name.lower()
+
+    if q == eid:
+        return 100
+    if q == fname:
+        return 99
+    if eid.startswith(q) or eid.endswith(q):
+        return 95
+    if fname == q:
+        return 99
+    if fname.startswith(q) or fname.endswith(q):
+        return 90
+    if q in eid:
+        return 85
+    if q in fname:
+        return 80
+
+    eid_parts = eid.replace(".", " ").replace("_", " ").split()
+    fname_parts = fname.replace("_", " ").split()
+    query_words = q.split()
+
+    matched = 0
+    total = len(query_words)
+    for word in query_words:
+        if any(word in part for part in eid_parts) or any(
+            word in part for part in fname_parts
+        ):
+            matched += 1
+
+    if matched == total and total > 0:
+        return 60 + matched * 5
+
+    if matched > 0:
+        return matched * 10
+
+    return 0
+
+
+def _fuzzy_find_entity(hass: HomeAssistant, query: str) -> str | None:
+    """Find the best matching entity for a fuzzy query. Returns entity_id or None."""
+    if not query:
+        return None
+
+    best_score = 0
+    best_entity_id = None
+
+    for state in hass.states.async_all():
+        friendly_name = state.attributes.get("friendly_name", state.entity_id)
+        score = _score_entity(query, state.entity_id, friendly_name)
+        if score > best_score:
+            best_score = score
+            best_entity_id = state.entity_id
+
+    if best_score >= 50:
+        return best_entity_id
+    return None
+
+
+def _fuzzy_search_entities(
+    hass: HomeAssistant, query: str, limit: int = 5
+) -> list[dict]:
+    """Search all entities and return top matches with scores."""
+    er = er_helper.async_get(hass)
+    ar = ar_helper.async_get(hass)
+    area_names: dict[str, str] = {a.id: a.name for a in ar.areas.values()}
+    entity_reg = {e.entity_id: e for e in er.entities.values()}
+
+    scored: list[tuple[int, dict]] = []
+    for state in hass.states.async_all():
+        entry = entity_reg.get(state.entity_id)
+        if entry and (entry.hidden_by or entry.disabled_by):
+            continue
+
+        friendly_name = state.attributes.get("friendly_name", state.entity_id)
+        score = _score_entity(query, state.entity_id, friendly_name)
+        if score >= 20:
+            area_id = entry.area_id if entry else None
+            scored.append((
+                score,
+                {
+                    "entity_id": state.entity_id,
+                    "friendly_name": friendly_name,
+                    "state": state.state,
+                    "area": area_names.get(area_id) if area_id else None,
+                    "score": score,
+                },
+            ))
+
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return [item[1] for item in scored[:limit]]
+
+
 def _resolve_entity_and_target(
     hass: HomeAssistant, args: dict
 ) -> tuple[str | None, dict | None]:
     """Return (entity_id, target) — exactly one will be non-None."""
     entity_id = args.get("entity_id")
+    name = args.get("name")
     area_name = args.get("area_name")
+
+    if name and not entity_id:
+        resolved = _fuzzy_find_entity(hass, name)
+        if resolved:
+            _LOGGER.debug("Marinara: resolved name '%s' to '%s'", name, resolved)
+            entity_id = resolved
+        else:
+            suggestions = _fuzzy_search_entities(hass, name, limit=3)
+            if suggestions:
+                hint = ", ".join(
+                    f"{s['entity_id']} ({s['friendly_name']})" for s in suggestions
+                )
+                raise ValueError(
+                    f"Could not find entity for '{name}'. Did you mean: {hint}?"
+                )
+            raise ValueError(f"Could not find entity for '{name}'.")
+
+    if entity_id and hass.states.get(entity_id) is None:
+        resolved = _fuzzy_find_entity(hass, entity_id)
+        if resolved:
+            _LOGGER.debug(
+                "Marinara: auto-resolved '%s' to '%s'", entity_id, resolved
+            )
+            entity_id = resolved
+        else:
+            suggestions = _fuzzy_search_entities(hass, entity_id, limit=3)
+            if suggestions:
+                hint = ", ".join(
+                    f"{s['entity_id']} ({s['friendly_name']})" for s in suggestions
+                )
+                raise ValueError(
+                    f"Entity '{entity_id}' not found. Did you mean: {hint}?"
+                )
+            raise ValueError(f"Entity '{entity_id}' not found.")
+
     if entity_id:
         return entity_id, None
     if area_name:
         area = _get_area(hass, area_name)
         return None, {"area_id": area.id}
-    raise ValueError("Provide entity_id or area_name")
+    raise ValueError("Provide entity_id, name, or area_name")
 
 
 # ---------------------------------------------------------------------------
@@ -414,6 +549,72 @@ async def _notify(hass: HomeAssistant, args: dict) -> dict:
     return {"result": "Notification sent"}
 
 
+async def _search_entities(hass: HomeAssistant, args: dict) -> dict:
+    query = _require(args, "query")
+    limit = min(int(args.get("limit", 5)), 20)
+    results = _fuzzy_search_entities(hass, query, limit)
+    return {
+        "query": query,
+        "results": results,
+        "total": len(results),
+    }
+
+
+async def _get_home_summary(hass: HomeAssistant, args: dict) -> dict:
+    er = er_helper.async_get(hass)
+    ar = ar_helper.async_get(hass)
+
+    area_names: dict[str, str] = {a.id: a.name for a in ar.areas.values()}
+    entity_reg = {e.entity_id: e for e in er.entities.values()}
+
+    areas: dict[str, dict[str, dict]] = {}
+    for state in hass.states.async_all():
+        domain = state.entity_id.split(".")[0]
+        if domain not in CONTROLLABLE_DOMAINS:
+            continue
+
+        entry = entity_reg.get(state.entity_id)
+        if entry and (entry.hidden_by or entry.disabled_by):
+            continue
+
+        friendly = state.attributes.get("friendly_name", state.entity_id)
+        device_info: dict[str, str] = {"name": friendly, "state": state.state}
+
+        if domain == "light" and "brightness" in state.attributes:
+            device_info["brightness"] = f"{round(state.attributes['brightness'] / 255 * 100)}%"
+        if domain == "climate" and "current_temperature" in state.attributes:
+            device_info["temperature"] = str(state.attributes["current_temperature"])
+
+        if entry and entry.area_id:
+            area_name = area_names.get(entry.area_id, "Unknown")
+        else:
+            area_name = "Unassigned"
+
+        areas.setdefault(area_name, {})[state.entity_id] = device_info
+
+    presence: dict[str, str] = {}
+    for state in hass.states.async_all():
+        if state.entity_id.startswith("person."):
+            friendly = state.attributes.get("friendly_name", state.entity_id)
+            presence[friendly] = state.state
+
+    weather_info: dict | None = None
+    for state in hass.states.async_all():
+        if state.entity_id.startswith("weather."):
+            weather_info = {
+                "condition": state.state,
+                "temperature": state.attributes.get("temperature"),
+                "humidity": state.attributes.get("humidity"),
+                "wind_speed": state.attributes.get("wind_speed"),
+            }
+            break
+
+    result: dict = {"areas": areas, "presence": presence}
+    if weather_info:
+        result["weather"] = weather_info
+    return result
+
+
 _DISPATCH = {
     "ha_turn_on": _turn_on,
     "ha_turn_off": _turn_off,
@@ -438,6 +639,8 @@ _DISPATCH = {
     "ha_close_cover": _close_cover,
     "ha_set_cover_position": _set_cover_position,
     "ha_notify": _notify,
+    "ha_search_entities": _search_entities,
+    "ha_get_home_summary": _get_home_summary,
 }
 
 

@@ -1,5 +1,12 @@
 """Constants for the Marinara Engine integration."""
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from homeassistant.core import HomeAssistant
+
 DOMAIN = "marinara_engine"
 
 DEFAULT_HOST = "localhost"
@@ -11,6 +18,11 @@ CONF_PORT = "port"
 CONF_WEBHOOK_ID = "webhook_id"
 CONF_PRIMARY_CHAT_ID = "primary_chat_id"
 CONF_ENABLED_CATEGORIES = "enabled_categories"
+
+CONTROLLABLE_DOMAINS: frozenset[str] = frozenset({
+    "light", "switch", "climate", "cover", "media_player",
+    "lock", "fan", "vacuum", "scene", "script", "alarm_control_panel",
+})
 
 TOOL_CATEGORIES: dict[str, str] = {
     "lights": "Lights & Switches",
@@ -446,6 +458,42 @@ TOOL_DEFINITIONS = [
             "required": ["message"],
         },
     },
+    {
+        "name": "ha_search_entities",
+        "category": "query",
+        "description": (
+            "Search for Home Assistant entities by name. Returns the top matches ranked "
+            "by relevance with their entity_id, friendly name, area, and current state. "
+            "Use this when you know a device's common name but not its exact entity_id."
+        ),
+        "parametersSchema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Search query — e.g. 'office light', 'bedroom ac', 'front door'",
+                },
+                "limit": {
+                    "type": "number",
+                    "description": "Maximum results to return (default: 5, max: 20)",
+                },
+            },
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "ha_get_home_summary",
+        "category": "query",
+        "description": (
+            "Get a compact snapshot of the entire home state. Returns all controllable "
+            "devices grouped by area with their current state, plus presence info (who is home) "
+            "and current weather. Use this to quickly understand the state of the home."
+        ),
+        "parametersSchema": {
+            "type": "object",
+            "properties": {},
+        },
+    },
 ]
 
 
@@ -455,22 +503,85 @@ def tools_for_categories(enabled_categories: list[str]) -> list[dict]:
     return [t for t in TOOL_DEFINITIONS if t["category"] in cats]
 
 
-HA_AGENT_PROMPT = """\
-You are a Home Assistant controller. \
-When the user asks you to control smart home devices, call the appropriate \
-ha_* tool and confirm the result. Do not add roleplay, narration, or \
-flavour text — just execute the command and report what happened.
-
+_AGENT_GUIDELINES = """\
 Guidelines:
 - Execute commands directly when the user asks. \
-"Turn on the office lights" → call ha_turn_on with area_name="Office".
-- Use area_name instead of individual entity_ids whenever acting on a room. \
-This is faster and more reliable than listing entities first.
+"Turn on the office lights" → call ha_turn_on with entity_id from the device list above.
+- Use the exact entity_id from the device list. Every controllable device is listed above \
+with its current state.
+- If a device is not listed, call ha_search_entities to find it by name.
+- Use area_name instead of individual entity_ids when you want to control all devices \
+in a room at once.
 - If you don't know the exact area name, call ha_list_areas first, then act.
-- If you need to find a specific entity_id, call ha_list_entities with \
-domain and/or area_name to narrow the results — every result includes its area.
 - Prefer specific tools (ha_set_brightness, ha_set_color) over ha_call_service \
 unless no dedicated tool fits.
-- Do not invent entity IDs. Query first if unsure.
+- Do not invent entity IDs. Use the device list above or query first if unsure.
 - Report errors clearly so the user can correct them.
 """
+
+
+def build_agent_prompt(hass: HomeAssistant) -> str:
+    """Build a dynamic agent prompt containing the live entity catalog."""
+    from homeassistant.helpers import area_registry as ar_helper
+    from homeassistant.helpers import entity_registry as er_helper
+
+    ar = ar_helper.async_get(hass)
+    er = er_helper.async_get(hass)
+
+    area_names: dict[str, str] = {a.id: a.name for a in ar.areas.values()}
+    entity_reg = {e.entity_id: e for e in er.entities.values()}
+
+    area_entities: dict[str, list[str]] = {name: [] for name in area_names.values()}
+    unassigned: list[str] = []
+
+    for state in hass.states.async_all():
+        domain = state.entity_id.split(".")[0]
+        if domain not in CONTROLLABLE_DOMAINS:
+            continue
+
+        entry = entity_reg.get(state.entity_id)
+        if entry and (entry.hidden_by or entry.disabled_by):
+            continue
+
+        friendly = state.attributes.get("friendly_name", state.entity_id)
+        state_str = state.state
+
+        if domain == "light" and "brightness" in state.attributes:
+            pct = round(state.attributes["brightness"] / 255 * 100)
+            state_str = f"{state.state}, {pct}%"
+        elif domain == "climate" and "current_temperature" in state.attributes:
+            state_str = f"{state.state}, {state.attributes['current_temperature']}°"
+
+        line = f'- {state.entity_id} ("{friendly}") — {state_str}'
+
+        if entry and entry.area_id:
+            area_name = area_names.get(entry.area_id)
+            if area_name:
+                area_entities[area_name].append(line)
+            else:
+                unassigned.append(line)
+        else:
+            unassigned.append(line)
+
+    sections: list[str] = [
+        "You are a Home Assistant controller.",
+        "You control a smart home. Here are the available devices:\n",
+    ]
+
+    for area_name in sorted(area_entities.keys()):
+        entities = area_entities[area_name]
+        if entities:
+            sections.append(f"## {area_name}")
+            for line in entities:
+                sections.append(line)
+            sections.append("")
+
+    if unassigned:
+        sections.append("## Unassigned")
+        for line in unassigned:
+            sections.append(line)
+        sections.append("")
+
+    sections.append(_AGENT_GUIDELINES)
+
+    return "\n".join(sections)

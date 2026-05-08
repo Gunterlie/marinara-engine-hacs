@@ -167,9 +167,10 @@ class MarinaraCoordinator(DataUpdateCoordinator[dict]):
 
         Returns "created", "updated", or "unchanged".
         """
-        from .const import HA_AGENT_PROMPT, tools_for_categories
+        from .const import build_agent_prompt, tools_for_categories
 
         tool_names = [t["name"] for t in tools_for_categories(enabled_categories)]
+        prompt = build_agent_prompt(self.hass)
 
         async with aiohttp.ClientSession() as session:
             timeout = aiohttp.ClientTimeout(total=10)
@@ -189,11 +190,17 @@ class MarinaraCoordinator(DataUpdateCoordinator[dict]):
                 if isinstance(settings, str):
                     settings = json.loads(settings)
                 current_tools = settings.get("enabledTools", [])
-                if set(current_tools) == set(tool_names):
+                current_prompt = existing.get("promptTemplate", "")
+                tools_match = set(current_tools) == set(tool_names)
+                prompt_match = current_prompt == prompt
+                if tools_match and prompt_match:
                     return "unchanged"
                 async with session.patch(
                     f"{self.base_url}/api/agents/{existing['id']}",
-                    json={"settings": {"enabledTools": tool_names}},
+                    json={
+                        "settings": {"enabledTools": tool_names},
+                        "promptTemplate": prompt,
+                    },
                     timeout=timeout,
                 ) as resp:
                     resp.raise_for_status()
@@ -209,7 +216,7 @@ class MarinaraCoordinator(DataUpdateCoordinator[dict]):
                 "phase": "parallel",
                 "enabled": True,
                 "connectionId": None,
-                "promptTemplate": HA_AGENT_PROMPT,
+                "promptTemplate": prompt,
                 "settings": {"enabledTools": tool_names},
             }
             async with session.post(
