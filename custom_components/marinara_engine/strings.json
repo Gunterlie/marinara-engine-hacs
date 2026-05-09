@@ -2,36 +2,79 @@
   "config": {
     "step": {
       "user": {
-        "title": "Connect to Marinara Engine",
-        "description": "Enter the host and port where Marinara Engine is running.",
         "data": {
-          "host": "Host",
-          "port": "Port"
-        }
+          "url": "Marinara Engine URL",
+          "basic_auth_user": "Basic Auth User",
+          "basic_auth_pass": "Basic Auth Password",
+          "admin_secret": "Admin Secret"
+        },
+        "description": "Connect to Marinara Engine. Leave auth fields blank if not required.",
+        "title": "Marinara Engine"
       }
     },
-    "error": {
-      "cannot_connect": "Cannot connect to Marinara Engine. Check the host, port, and that the server is running.",
-      "unknown": "An unexpected error occurred."
-    },
     "abort": {
-      "already_configured": "Marinara Engine at this address is already configured."
+      "already_configured": "Device is already configured"
+    },
+    "error": {
+      "cannot_connect": "Failed to connect",
+      "unknown": "Unexpected error"
     }
   },
   "options": {
     "step": {
       "init": {
-        "title": "Marinara Engine Options",
-        "description": "Choose the primary chat and which tool categories Marinara is allowed to use.",
         "data": {
           "primary_chat_id": "Primary Chat",
           "enabled_categories": "Exposed Tool Categories",
+          "basic_auth_user": "Basic Auth User",
+          "basic_auth_pass": "Basic Auth Password",
           "admin_secret": "Admin Secret"
         },
-        "data_description": {
-          "enabled_categories": "Only the selected categories will be synced as tools into Marinara Engine. Changes take effect after pressing the Sync HA Tools button or restarting Home Assistant.",
-          "admin_secret": "The ADMIN_SECRET value from Marinara Engine's .env file. Required when Marinara is not running on loopback. Leave empty if not set."
-        }
+        "description": "Configure Marinara Engine integration options."
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "chat_count": {
+        "name": "Chat count"
+      },
+      "active_agent_count": {
+        "name": "Active agent count"
+      },
+      "version": {
+        "name": "Version"
+      },
+      "last_sync": {
+        "name": "Last sync"
+      }
+    },
+    "binary_sensor": {
+      "connection": {
+        "name": "Connection"
+      }
+    },
+    "switch": {
+      "agent": {
+        "name": "{name}"
+      }
+    },
+    "select": {
+      "active_chat": {
+        "name": "Active chat"
+      }
+    },
+    "button": {
+      "abort_generation": {
+        "name": "Abort generation"
+      },
+      "sync_tools": {
+        "name": "Sync HA tools"
+      }
+    },
+    "text": {
+      "user_activity": {
+        "name": "User activity"
       }
     }
   }

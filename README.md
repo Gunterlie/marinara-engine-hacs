@@ -103,15 +103,31 @@ If Marinara has `BASIC_AUTH_USER` and `BASIC_AUTH_PASS` set, **every** request m
 
 ## Entities
 
+The integration creates a single **Marinara Engine** device with organized entities:
+
+### Controls
 | Entity | Type | Description |
 |--------|------|-------------|
-| Marinara Chat Count | Sensor | Total number of chats |
-| Marinara Active Agent Count | Sensor | Number of globally enabled agents |
-| Marinara Active Chat | Select | Choose which chat HA services target |
-| Marinara User Activity | Text | Free-text activity string sent with every AI generation as context |
-| Marinara Agent: *name* | Switch | Enable / disable each AI agent globally |
-| Marinara Abort Generation | Button | Cancel any in-flight AI generation |
-| Marinara Sync HA Tools | Button | Re-sync all tool definitions and agent to Marinara |
+| **Home Assistant** | Switch | Enable / disable the Home Assistant agent *(enabled by default)* |
+| **Abort generation** | Button | Cancel any in-flight AI generation |
+| **Sync HA tools** | Button | Re-sync all tool definitions and agent to Marinara |
+
+### Configuration
+| Entity | Type | Description |
+|--------|------|-------------|
+| **Active chat** | Select | Choose which chat HA services target |
+| **User activity** | Text | Free-text activity string sent with every AI generation as context |
+
+### Diagnostic
+| Entity | Type | Description |
+|--------|------|-------------|
+| **Connection** | Binary Sensor | Whether Marinara Engine is reachable |
+| **Chat count** | Sensor | Total number of chats |
+| **Active agent count** | Sensor | Number of globally enabled agents |
+| **Version** | Sensor | Marinara Engine version |
+| **Last sync** | Sensor | Timestamp of the last successful tool sync |
+
+> **Note:** Individual agent switches (other than Home Assistant) are created but **disabled by default**. Enable them in the entity settings if you want to toggle them from Home Assistant.
 
 ## Tool categories
 

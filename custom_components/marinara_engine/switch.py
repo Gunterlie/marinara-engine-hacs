@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -25,22 +26,12 @@ async def async_setup_entry(
     )
 
 
-class MarinaraAgentSwitch(CoordinatorEntity[MarinaraCoordinator], SwitchEntity):
-    """Toggle the global enabled state of a Marinara Engine agent."""
+class _MarinaraEntity(CoordinatorEntity[MarinaraCoordinator]):
+    _attr_has_entity_name = True
 
-    _attr_icon = "mdi:robot"
-
-    def __init__(
-        self,
-        coordinator: MarinaraCoordinator,
-        entry: ConfigEntry,
-        agent: dict,
-    ) -> None:
+    def __init__(self, coordinator: MarinaraCoordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator)
         self._entry = entry
-        self._agent_id: str = agent["id"]
-        self._attr_unique_id = f"{entry.entry_id}_agent_{agent['id']}"
-        self._attr_name = f"Marinara Agent: {agent.get('name', agent['id'])}"
 
     @property
     def device_info(self) -> dict:
@@ -49,7 +40,36 @@ class MarinaraAgentSwitch(CoordinatorEntity[MarinaraCoordinator], SwitchEntity):
             "name": "Marinara Engine",
             "manufacturer": "Marinara Engine",
             "model": "Local AI Engine",
+            "configuration_url": self.coordinator.base_url,
         }
+
+    @property
+    def available(self) -> bool:
+        return self.coordinator.last_update_success
+
+
+class MarinaraAgentSwitch(_MarinaraEntity, SwitchEntity):
+    """Toggle the global enabled state of a Marinara Engine agent."""
+
+    _attr_entity_category = EntityCategory.CONFIG
+    _attr_translation_key = "agent"
+
+    def __init__(
+        self,
+        coordinator: MarinaraCoordinator,
+        entry: ConfigEntry,
+        agent: dict,
+    ) -> None:
+        super().__init__(coordinator)
+        self._agent_id: str = agent["id"]
+        self._attr_unique_id = f"{entry.entry_id}_agent_{agent['id']}"
+        self._attr_name = agent.get("name", agent["id"])
+        # Only the Home Assistant agent is enabled by default
+        self._attr_entity_registry_enabled_default = agent.get("type") == "home_assistant"
+
+    @property
+    def icon(self) -> str:
+        return "mdi:robot" if self.is_on else "mdi:robot-off-outline"
 
     @property
     def is_on(self) -> bool:

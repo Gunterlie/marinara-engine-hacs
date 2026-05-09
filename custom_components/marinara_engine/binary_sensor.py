@@ -1,8 +1,8 @@
-"""Text platform for Marinara Engine — user activity / status message."""
+"""Binary sensor platform for Marinara Engine."""
 
 from __future__ import annotations
 
-from homeassistant.components.text import TextEntity
+from homeassistant.components.binary_sensor import BinarySensorDeviceClass, BinarySensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
@@ -19,7 +19,7 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     coordinator: MarinaraCoordinator = hass.data[DOMAIN][entry.entry_id]
-    async_add_entities([MarinaraUserActivityText(coordinator, entry)])
+    async_add_entities([MarinaraConnectionBinarySensor(coordinator, entry)])
 
 
 class _MarinaraEntity(CoordinatorEntity[MarinaraCoordinator]):
@@ -39,26 +39,30 @@ class _MarinaraEntity(CoordinatorEntity[MarinaraCoordinator]):
             "configuration_url": self.coordinator.base_url,
         }
 
-    @property
-    def available(self) -> bool:
-        return self.coordinator.last_update_success
 
+class MarinaraConnectionBinarySensor(_MarinaraEntity, BinarySensorEntity):
+    """Connection status of Marinara Engine."""
 
-class MarinaraUserActivityText(_MarinaraEntity, TextEntity):
-    """Editable text entity for the Marinara user activity / status message."""
-
-    _attr_entity_category = EntityCategory.CONFIG
-    _attr_icon = "mdi:pencil-outline"
-    _attr_native_max = 120
-    _attr_translation_key = "user_activity"
+    _attr_device_class = BinarySensorDeviceClass.CONNECTIVITY
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_translation_key = "connection"
 
     def __init__(self, coordinator: MarinaraCoordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator, entry)
-        self._attr_unique_id = f"{entry.entry_id}_user_activity"
+        self._attr_unique_id = f"{entry.entry_id}_connection"
 
     @property
-    def native_value(self) -> str:
-        return self.coordinator.data.get("userActivity", "")
+    def is_on(self) -> bool:
+        return self.coordinator.last_update_success
 
-    async def async_set_value(self, value: str) -> None:
-        await self.coordinator.set_user_activity(value)
+    @property
+    def available(self) -> bool:
+        # Always available so users can see when it goes offline
+        return True
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        return {
+            "last_update": self.coordinator.last_update_success_time.isoformat()
+            if self.coordinator.last_update_success_time else None,
+        }

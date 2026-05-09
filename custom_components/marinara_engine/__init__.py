@@ -30,7 +30,14 @@ from .webhook import async_register_webhook, async_unregister_webhook
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS = [Platform.SENSOR, Platform.SWITCH, Platform.SELECT, Platform.BUTTON, Platform.TEXT]
+PLATFORMS = [
+    Platform.SENSOR,
+    Platform.BINARY_SENSOR,
+    Platform.SWITCH,
+    Platform.SELECT,
+    Platform.BUTTON,
+    Platform.TEXT,
+]
 
 SEND_MESSAGE_SCHEMA = vol.Schema(
     {

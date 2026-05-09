@@ -46,6 +46,19 @@ class MarinaraCoordinator(DataUpdateCoordinator[dict]):
         try:
             async with aiohttp.ClientSession() as session:
                 timeout = aiohttp.ClientTimeout(total=10)
+
+                # Health check also fetches version (no auth required)
+                version = None
+                try:
+                    async with session.get(
+                        f"{self.base_url}/api/health", timeout=aiohttp.ClientTimeout(total=5)
+                    ) as resp:
+                        if resp.status == 200:
+                            health = await resp.json()
+                            version = health.get("version")
+                except Exception:
+                    pass
+
                 async with session.get(
                     f"{self.base_url}/api/chats", auth=self._basic_auth, timeout=timeout
                 ) as resp:
@@ -71,7 +84,13 @@ class MarinaraCoordinator(DataUpdateCoordinator[dict]):
             except Exception:
                 pass
 
-            return {"chats": chats, "agents": agents, "userActivity": user_activity}
+            return {
+                "chats": chats,
+                "agents": agents,
+                "userActivity": user_activity,
+                "version": version,
+                "last_sync": self.data.get("last_sync") if self.data else None,
+            }
         except aiohttp.ClientConnectionError as err:
             raise UpdateFailed(f"Cannot reach Marinara Engine: {err}") from err
         except aiohttp.ClientResponseError as err:
