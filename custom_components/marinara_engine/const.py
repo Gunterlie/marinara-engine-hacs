@@ -554,8 +554,10 @@ def build_agent_prompt(hass: HomeAssistant) -> str:
         state_str = state.state
 
         if domain == "light" and "brightness" in state.attributes:
-            pct = round(state.attributes["brightness"] / 255 * 100)
-            state_str = f"{state.state}, {pct}%"
+            brightness = state.attributes["brightness"]
+            if brightness is not None:
+                pct = round(brightness / 255 * 100)
+                state_str = f"{state.state}, {pct}%"
         elif domain == "climate" and "current_temperature" in state.attributes:
             state_str = f"{state.state}, {state.attributes['current_temperature']}°"
 

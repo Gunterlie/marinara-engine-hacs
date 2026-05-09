@@ -88,14 +88,18 @@ class MarinaraSyncToolsButton(_MarinaraEntity, ButtonEntity):
         enabled_categories = self._entry.options.get(
             CONF_ENABLED_CATEGORIES, DEFAULT_ENABLED_CATEGORIES
         )
-        created, updated = await self.coordinator.sync_tools(webhook_url, enabled_categories)
-        _LOGGER.info(
-            "Marinara tool sync: %d created, %d updated", created, updated
-        )
-        agent_status = await self.coordinator.sync_agent(enabled_categories)
-        if agent_status != "unchanged":
-            _LOGGER.info("Marinara tool sync: Home Assistant agent %s", agent_status)
-        # Update last_sync timestamp in coordinator data
-        from datetime import datetime, timezone
-        self.coordinator.data["last_sync"] = datetime.now(timezone.utc).isoformat()
-        self.async_write_ha_state()
+        try:
+            created, updated = await self.coordinator.sync_tools(webhook_url, enabled_categories)
+            _LOGGER.info(
+                "Marinara tool sync: %d created, %d updated", created, updated
+            )
+            agent_status = await self.coordinator.sync_agent(enabled_categories)
+            if agent_status != "unchanged":
+                _LOGGER.info("Marinara tool sync: Home Assistant agent %s", agent_status)
+            # Update last_sync timestamp in coordinator data
+            from datetime import datetime, timezone
+            if self.coordinator.data is not None:
+                self.coordinator.data["last_sync"] = datetime.now(timezone.utc).isoformat()
+        except Exception as err:
+            _LOGGER.error("Marinara tool sync failed: %s", err)
+            raise
