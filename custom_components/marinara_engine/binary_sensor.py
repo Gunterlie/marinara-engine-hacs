@@ -45,6 +45,7 @@ class MarinaraConnectionBinarySensor(_MarinaraEntity, BinarySensorEntity):
 
     _attr_device_class = BinarySensorDeviceClass.CONNECTIVITY
     _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_name = "Connection"
     _attr_translation_key = "connection"
 
     def __init__(self, coordinator: MarinaraCoordinator, entry: ConfigEntry) -> None:
@@ -62,7 +63,7 @@ class MarinaraConnectionBinarySensor(_MarinaraEntity, BinarySensorEntity):
 
     @property
     def extra_state_attributes(self) -> dict:
+        last_update = getattr(self.coordinator, "last_update_success_time", None)
         return {
-            "last_update": self.coordinator.last_update_success_time.isoformat()
-            if self.coordinator.last_update_success_time else None,
+            "last_update": last_update.isoformat() if last_update else None,
         }

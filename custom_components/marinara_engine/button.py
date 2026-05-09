@@ -55,6 +55,7 @@ class MarinaraAbortButton(_MarinaraEntity, ButtonEntity):
     """Cancel any in-flight AI generation."""
 
     _attr_icon = "mdi:stop-circle-outline"
+    _attr_name = "Abort generation"
     _attr_translation_key = "abort_generation"
 
     def __init__(self, coordinator: MarinaraCoordinator, entry: ConfigEntry) -> None:
@@ -69,6 +70,7 @@ class MarinaraSyncToolsButton(_MarinaraEntity, ButtonEntity):
     """Push all HA tool definitions into Marinara's Custom Tools."""
 
     _attr_icon = "mdi:cloud-sync-outline"
+    _attr_name = "Sync HA tools"
     _attr_translation_key = "sync_tools"
 
     def __init__(self, coordinator: MarinaraCoordinator, entry: ConfigEntry) -> None:

@@ -49,6 +49,7 @@ class MarinaraActiveChatSelect(_MarinaraEntity, SelectEntity):
 
     _attr_entity_category = EntityCategory.CONFIG
     _attr_icon = "mdi:chat-processing-outline"
+    _attr_name = "Active chat"
     _attr_translation_key = "active_chat"
 
     def __init__(self, coordinator: MarinaraCoordinator, entry: ConfigEntry) -> None:

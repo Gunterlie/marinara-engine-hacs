@@ -50,6 +50,7 @@ class MarinaraUserActivityText(_MarinaraEntity, TextEntity):
     _attr_entity_category = EntityCategory.CONFIG
     _attr_icon = "mdi:pencil-outline"
     _attr_native_max = 120
+    _attr_name = "User activity"
     _attr_translation_key = "user_activity"
 
     def __init__(self, coordinator: MarinaraCoordinator, entry: ConfigEntry) -> None:

@@ -37,6 +37,7 @@ PLATFORMS = [
     Platform.SELECT,
     Platform.BUTTON,
     Platform.TEXT,
+    Platform.NOTIFY,
 ]
 
 SEND_MESSAGE_SCHEMA = vol.Schema(

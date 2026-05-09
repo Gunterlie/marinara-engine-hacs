@@ -58,6 +58,7 @@ class MarinaraChatCountSensor(_MarinaraEntity, SensorEntity):
     _attr_icon = "mdi:chat-outline"
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_native_unit_of_measurement = "chats"
+    _attr_name = "Chat count"
     _attr_translation_key = "chat_count"
 
     def __init__(self, coordinator: MarinaraCoordinator, entry: ConfigEntry) -> None:
@@ -85,6 +86,7 @@ class MarinaraActiveAgentCountSensor(_MarinaraEntity, SensorEntity):
     _attr_icon = "mdi:robot-outline"
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_native_unit_of_measurement = "agents"
+    _attr_name = "Active agent count"
     _attr_translation_key = "active_agent_count"
 
     def __init__(self, coordinator: MarinaraCoordinator, entry: ConfigEntry) -> None:
@@ -112,6 +114,7 @@ class MarinaraVersionSensor(_MarinaraEntity, SensorEntity):
 
     _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_icon = "mdi:information-outline"
+    _attr_name = "Version"
     _attr_translation_key = "version"
 
     def __init__(self, coordinator: MarinaraCoordinator, entry: ConfigEntry) -> None:
@@ -129,6 +132,7 @@ class MarinaraLastSyncSensor(_MarinaraEntity, SensorEntity):
     _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_device_class = "timestamp"
     _attr_icon = "mdi:clock-check-outline"
+    _attr_name = "Last sync"
     _attr_translation_key = "last_sync"
 
     def __init__(self, coordinator: MarinaraCoordinator, entry: ConfigEntry) -> None:
