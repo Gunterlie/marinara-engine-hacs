@@ -103,6 +103,7 @@ class MarinaraSyncToolsButton(_MarinaraEntity, ButtonEntity):
             from datetime import datetime, timezone
             if self.coordinator.data is not None:
                 self.coordinator.data["last_sync"] = datetime.now(timezone.utc).isoformat()
+                await self.coordinator.async_set_updated_data(self.coordinator.data)
         except Exception as err:
             _LOGGER.error("Marinara tool sync failed: %s", err)
             raise

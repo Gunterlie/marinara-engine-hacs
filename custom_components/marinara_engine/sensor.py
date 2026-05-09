@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from homeassistant.components.sensor import SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
@@ -140,5 +142,11 @@ class MarinaraLastSyncSensor(_MarinaraEntity, SensorEntity):
         self._attr_unique_id = f"{entry.entry_id}_last_sync"
 
     @property
-    def native_value(self) -> str | None:
-        return self.coordinator.data.get("last_sync")
+    def native_value(self) -> datetime | None:
+        value = self.coordinator.data.get("last_sync")
+        if not value:
+            return None
+        try:
+            return datetime.fromisoformat(value)
+        except ValueError:
+            return None
