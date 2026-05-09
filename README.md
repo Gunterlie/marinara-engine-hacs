@@ -117,6 +117,7 @@ The integration creates a single **Marinara Engine** device with organized entit
 |--------|------|-------------|
 | **Active chat** | Select | Choose which chat HA services target |
 | **User activity** | Text | Free-text activity string sent with every AI generation as context |
+| **Send message** | Notify | Send messages to Marinara chats from HA automations or UI |
 
 ### Diagnostic
 | Entity | Type | Description |
@@ -157,18 +158,26 @@ The agent is kept in sync automatically — pressing **Sync HA Tools** after cha
 
 Use these in automations to interact with Marinara from Home Assistant's side.
 
-### `marinara_engine.send_message`
+### `notify.marinara_engine`
 
-Send a message to a Marinara chat.
+Send a message to a Marinara chat. Accepts chat name or chat ID as target.
 
 | Field | Required | Description |
 |-------|----------|-------------|
 | `message` | Yes | Message content |
-| `chat_id` | No | Target chat ID (defaults to primary chat) |
-| `role` | No | `user` / `assistant` / `system` / `narrator` |
+| `target` | No | Chat ID or chat name (defaults to primary chat) |
 | `trigger_generation` | No | Also trigger an AI response (default: false) |
 
-**Example — notify the AI when someone arrives:**
+**Example — send a quick message from Developer Tools:**
+```yaml
+service: notify.marinara_engine
+data:
+  message: "Someone just arrived at the front door."
+  target: "Dave RP"
+  trigger_generation: true
+```
+
+**Example — automation:**
 ```yaml
 automation:
   trigger:
@@ -176,11 +185,22 @@ automation:
     entity_id: binary_sensor.front_door
     to: "on"
   action:
-    service: marinara_engine.send_message
+    service: notify.marinara_engine
     data:
       message: "Someone just arrived at the front door."
       trigger_generation: true
 ```
+
+### `marinara_engine.send_message`
+
+Low-level service to send a message to a Marinara chat. Prefer `notify.marinara_engine` for most use cases.
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `message` | Yes | Message content |
+| `chat_id` | No | Target chat ID (defaults to primary chat) |
+| `role` | No | `user` / `assistant` / `system` / `narrator` |
+| `trigger_generation` | No | Also trigger an AI response (default: false) |
 
 ### `marinara_engine.trigger_generation`
 
