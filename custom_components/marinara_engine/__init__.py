@@ -13,10 +13,13 @@ from homeassistant.helpers import config_validation as cv
 
 from .const import (
     CONF_ADMIN_SECRET,
+    CONF_BASIC_AUTH_PASS,
+    CONF_BASIC_AUTH_USER,
     CONF_ENABLED_CATEGORIES,
     CONF_HOST,
     CONF_PORT,
     CONF_PRIMARY_CHAT_ID,
+    CONF_URL,
     CONF_WEBHOOK_ID,
     DEFAULT_ENABLED_CATEGORIES,
     DOMAIN,
@@ -48,12 +51,43 @@ TRIGGER_GENERATION_SCHEMA = vol.Schema(
 )
 
 
+async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
+    """Migrate old config entries to new format."""
+    _LOGGER.debug(
+        "Migrating Marinara Engine config entry from version %s", config_entry.version
+    )
+
+    if config_entry.version == 1:
+        # v1 used host + port; v2 uses a single URL
+        data = dict(config_entry.data)
+        host = data.pop(CONF_HOST, "localhost")
+        port = data.pop(CONF_PORT, 7860)
+        data[CONF_URL] = f"http://{host}:{port}"
+
+        # Move admin_secret from options to data if present
+        options = dict(config_entry.options)
+        if CONF_ADMIN_SECRET in options:
+            data[CONF_ADMIN_SECRET] = options.pop(CONF_ADMIN_SECRET)
+
+        hass.config_entries.async_update_entry(
+            config_entry, data=data, options=options, version=2
+        )
+        _LOGGER.info(
+            "Migrated Marinara Engine config entry %s to version 2 (URL: %s)",
+            config_entry.entry_id,
+            data[CONF_URL],
+        )
+
+    return True
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     coordinator = MarinaraCoordinator(
         hass,
-        entry.data[CONF_HOST],
-        entry.data[CONF_PORT],
-        admin_secret=entry.options.get(CONF_ADMIN_SECRET) or None,
+        entry.data[CONF_URL],
+        basic_auth_user=entry.data.get(CONF_BASIC_AUTH_USER) or None,
+        basic_auth_pass=entry.data.get(CONF_BASIC_AUTH_PASS) or None,
+        admin_secret=entry.data.get(CONF_ADMIN_SECRET) or None,
     )
     await coordinator.async_verify_connection()
     await coordinator.async_config_entry_first_refresh()

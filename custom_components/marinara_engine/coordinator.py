@@ -20,8 +20,20 @@ _LOGGER = logging.getLogger(__name__)
 class MarinaraCoordinator(DataUpdateCoordinator[dict]):
     """Polls Marinara Engine for chats and agents."""
 
-    def __init__(self, hass: HomeAssistant, host: str, port: int, admin_secret: str | None = None) -> None:
-        self.base_url = f"http://{host}:{port}"
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        base_url: str,
+        basic_auth_user: str | None = None,
+        basic_auth_pass: str | None = None,
+        admin_secret: str | None = None,
+    ) -> None:
+        self.base_url = base_url.rstrip("/")
+        self._basic_auth = None
+        user = (basic_auth_user or "").strip() or None
+        password = (basic_auth_pass or "").strip() or None
+        if user and password:
+            self._basic_auth = aiohttp.BasicAuth(user, password)
         self._admin_secret = (admin_secret or "").strip() or None
         super().__init__(
             hass,
@@ -35,19 +47,19 @@ class MarinaraCoordinator(DataUpdateCoordinator[dict]):
             async with aiohttp.ClientSession() as session:
                 timeout = aiohttp.ClientTimeout(total=10)
                 async with session.get(
-                    f"{self.base_url}/api/chats", timeout=timeout
+                    f"{self.base_url}/api/chats", auth=self._basic_auth, timeout=timeout
                 ) as resp:
                     resp.raise_for_status()
                     chats = await resp.json()
 
                 async with session.get(
-                    f"{self.base_url}/api/agents", timeout=timeout
+                    f"{self.base_url}/api/agents", auth=self._basic_auth, timeout=timeout
                 ) as resp:
                     resp.raise_for_status()
                     agents = await resp.json()
 
                 async with session.get(
-                    f"{self.base_url}/api/app-settings/ui", timeout=timeout
+                    f"{self.base_url}/api/app-settings/ui", auth=self._basic_auth, timeout=timeout
                 ) as resp:
                     resp.raise_for_status()
                     ui_settings_raw = await resp.json()
@@ -88,6 +100,7 @@ class MarinaraCoordinator(DataUpdateCoordinator[dict]):
             async with aiohttp.ClientSession() as session:
                 async with session.get(
                     f"{self.base_url}/api/chats",
+                    auth=self._basic_auth,
                     timeout=aiohttp.ClientTimeout(total=5),
                 ) as resp:
                     resp.raise_for_status()
@@ -101,6 +114,7 @@ class MarinaraCoordinator(DataUpdateCoordinator[dict]):
         async with aiohttp.ClientSession() as session:
             async with session.post(
                 f"{self.base_url}/api/chats/{chat_id}/messages",
+                auth=self._basic_auth,
                 json={"chatId": chat_id, "role": role, "content": content, "characterId": None},
                 timeout=aiohttp.ClientTimeout(total=10),
             ) as resp:
@@ -113,6 +127,7 @@ class MarinaraCoordinator(DataUpdateCoordinator[dict]):
         async with aiohttp.ClientSession() as session:
             async with session.post(
                 f"{self.base_url}/api/generate",
+                auth=self._basic_auth,
                 json={
                     "chatId": chat_id,
                     "userMessage": user_message,
@@ -127,6 +142,7 @@ class MarinaraCoordinator(DataUpdateCoordinator[dict]):
         async with aiohttp.ClientSession() as session:
             async with session.post(
                 f"{self.base_url}/api/generate/abort",
+                auth=self._basic_auth,
                 timeout=aiohttp.ClientTimeout(total=5),
             ) as resp:
                 resp.raise_for_status()
@@ -135,7 +151,7 @@ class MarinaraCoordinator(DataUpdateCoordinator[dict]):
         async with aiohttp.ClientSession() as session:
             timeout = aiohttp.ClientTimeout(total=10)
             async with session.get(
-                f"{self.base_url}/api/app-settings/ui", timeout=timeout
+                f"{self.base_url}/api/app-settings/ui", auth=self._basic_auth, timeout=timeout
             ) as resp:
                 resp.raise_for_status()
                 raw = await resp.json()
@@ -146,6 +162,7 @@ class MarinaraCoordinator(DataUpdateCoordinator[dict]):
             blob.update(patch)
             async with session.put(
                 f"{self.base_url}/api/app-settings/ui",
+                auth=self._basic_auth,
                 json={"value": json.dumps(blob)},
                 timeout=timeout,
             ) as resp:
@@ -160,6 +177,7 @@ class MarinaraCoordinator(DataUpdateCoordinator[dict]):
         async with aiohttp.ClientSession() as session:
             async with session.patch(
                 f"{self.base_url}/api/agents/{agent_id}",
+                auth=self._basic_auth,
                 json={"enabled": enabled},
                 timeout=aiohttp.ClientTimeout(total=10),
             ) as resp:
@@ -179,7 +197,7 @@ class MarinaraCoordinator(DataUpdateCoordinator[dict]):
             timeout = aiohttp.ClientTimeout(total=10)
 
             async with session.get(
-                f"{self.base_url}/api/agents", timeout=timeout
+                f"{self.base_url}/api/agents", auth=self._basic_auth, timeout=timeout
             ) as resp:
                 resp.raise_for_status()
                 agents = await resp.json()
@@ -200,10 +218,12 @@ class MarinaraCoordinator(DataUpdateCoordinator[dict]):
                     return "unchanged"
                 async with session.patch(
                     f"{self.base_url}/api/agents/{existing['id']}",
+                    auth=self._basic_auth,
                     json={
                         "settings": {"enabledTools": tool_names},
                         "promptTemplate": prompt,
                     },
+                    headers=self._privileged_headers,
                     timeout=timeout,
                 ) as resp:
                     resp.raise_for_status()
@@ -223,7 +243,11 @@ class MarinaraCoordinator(DataUpdateCoordinator[dict]):
                 "settings": {"enabledTools": tool_names},
             }
             async with session.post(
-                f"{self.base_url}/api/agents", json=payload, timeout=timeout
+                f"{self.base_url}/api/agents",
+                auth=self._basic_auth,
+                json=payload,
+                headers=self._privileged_headers,
+                timeout=timeout,
             ) as resp:
                 resp.raise_for_status()
 
@@ -245,7 +269,7 @@ class MarinaraCoordinator(DataUpdateCoordinator[dict]):
             timeout = aiohttp.ClientTimeout(total=10)
 
             async with session.get(
-                f"{self.base_url}/api/custom-tools", timeout=timeout
+                f"{self.base_url}/api/custom-tools", auth=self._basic_auth, timeout=timeout
             ) as resp:
                 resp.raise_for_status()
                 existing = await resp.json()
@@ -267,6 +291,7 @@ class MarinaraCoordinator(DataUpdateCoordinator[dict]):
                     tool_id = existing_by_name[tool["name"]]["id"]
                     async with session.patch(
                         f"{self.base_url}/api/custom-tools/{tool_id}",
+                        auth=self._basic_auth,
                         json=payload,
                         headers=self._privileged_headers,
                         timeout=timeout,
@@ -276,6 +301,7 @@ class MarinaraCoordinator(DataUpdateCoordinator[dict]):
                 else:
                     async with session.post(
                         f"{self.base_url}/api/custom-tools",
+                        auth=self._basic_auth,
                         json=payload,
                         headers=self._privileged_headers,
                         timeout=timeout,

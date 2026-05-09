@@ -11,24 +11,26 @@ from homeassistant.components.webhook import async_generate_id
 from homeassistant.config_entries import ConfigEntry, ConfigFlow, OptionsFlow
 from homeassistant.core import callback
 from homeassistant.data_entry_flow import FlowResult
-
 from homeassistant.helpers.selector import (
     SelectOptionDict,
     SelectSelector,
     SelectSelectorConfig,
     SelectSelectorMode,
+    TextSelector,
+    TextSelectorConfig,
+    TextSelectorType,
 )
 
 from .const import (
     CONF_ADMIN_SECRET,
+    CONF_BASIC_AUTH_PASS,
+    CONF_BASIC_AUTH_USER,
     CONF_ENABLED_CATEGORIES,
-    CONF_HOST,
-    CONF_PORT,
     CONF_PRIMARY_CHAT_ID,
+    CONF_URL,
     CONF_WEBHOOK_ID,
     DEFAULT_ENABLED_CATEGORIES,
-    DEFAULT_HOST,
-    DEFAULT_PORT,
+    DEFAULT_URL,
     DOMAIN,
     TOOL_CATEGORIES,
 )
@@ -37,18 +39,40 @@ _LOGGER = logging.getLogger(__name__)
 
 _STEP_USER_SCHEMA = vol.Schema(
     {
-        vol.Required(CONF_HOST, default=DEFAULT_HOST): str,
-        vol.Required(CONF_PORT, default=DEFAULT_PORT): vol.Coerce(int),
+        vol.Required(
+            CONF_URL, default=DEFAULT_URL
+        ): TextSelector(
+            TextSelectorConfig(type=TextSelectorType.URL)
+        ),
+        vol.Optional(CONF_BASIC_AUTH_USER, default=""): TextSelector(
+            TextSelectorConfig(type=TextSelectorType.TEXT)
+        ),
+        vol.Optional(CONF_BASIC_AUTH_PASS, default=""): TextSelector(
+            TextSelectorConfig(type=TextSelectorType.PASSWORD)
+        ),
+        vol.Optional(CONF_ADMIN_SECRET, default=""): TextSelector(
+            TextSelectorConfig(type=TextSelectorType.PASSWORD)
+        ),
     }
 )
 
 
-async def _test_connection(host: str, port: int) -> str | None:
+async def _test_connection(
+    url: str,
+    basic_auth_user: str | None = None,
+    basic_auth_pass: str | None = None,
+) -> str | None:
     """Return None on success or an error key string on failure."""
+    auth = None
+    user = (basic_auth_user or "").strip() or None
+    password = (basic_auth_pass or "").strip() or None
+    if user and password:
+        auth = aiohttp.BasicAuth(user, password)
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(
-                f"http://{host}:{port}/api/chats",
+                f"{url.rstrip('/')}/api/chats",
+                auth=auth,
                 timeout=aiohttp.ClientTimeout(total=5),
             ) as resp:
                 if resp.status == 200:
@@ -63,7 +87,7 @@ async def _test_connection(host: str, port: int) -> str | None:
 class MarinaraConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Marinara Engine."""
 
-    VERSION = 1
+    VERSION = 2
 
     async def async_step_user(
         self, user_input: dict | None = None
@@ -71,22 +95,26 @@ class MarinaraConfigFlow(ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            host = user_input[CONF_HOST].strip()
-            port = user_input[CONF_PORT]
+            url = user_input[CONF_URL].strip().rstrip("/")
+            basic_auth_user = user_input.get(CONF_BASIC_AUTH_USER, "").strip() or None
+            basic_auth_pass = user_input.get(CONF_BASIC_AUTH_PASS, "").strip() or None
+            admin_secret = user_input.get(CONF_ADMIN_SECRET, "").strip() or None
 
-            error = await _test_connection(host, port)
+            error = await _test_connection(url, basic_auth_user, basic_auth_pass)
             if error:
                 errors["base"] = error
             else:
-                await self.async_set_unique_id(f"{host}:{port}")
+                await self.async_set_unique_id(url)
                 self._abort_if_unique_id_configured()
 
                 return self.async_create_entry(
-                    title=f"Marinara Engine ({host}:{port})",
+                    title=f"Marinara Engine ({url})",
                     data={
-                        CONF_HOST: host,
-                        CONF_PORT: port,
+                        CONF_URL: url,
                         CONF_WEBHOOK_ID: async_generate_id(),
+                        CONF_BASIC_AUTH_USER: basic_auth_user,
+                        CONF_BASIC_AUTH_PASS: basic_auth_pass,
+                        CONF_ADMIN_SECRET: admin_secret,
                     },
                 )
 
@@ -114,16 +142,33 @@ class MarinaraOptionsFlow(OptionsFlow):
     ) -> FlowResult:
         if user_input is not None:
             data = dict(user_input)
-            if CONF_ADMIN_SECRET in data and isinstance(data[CONF_ADMIN_SECRET], str):
-                data[CONF_ADMIN_SECRET] = data[CONF_ADMIN_SECRET].strip()
+            # Strip secrets; treat empty string as None
+            for key in (CONF_ADMIN_SECRET, CONF_BASIC_AUTH_USER, CONF_BASIC_AUTH_PASS):
+                if key in data and isinstance(data[key], str):
+                    data[key] = data[key].strip() or None
+
+            # Update connection credentials in entry.data so coordinator picks them up
+            new_data = dict(self._config_entry.data)
+            new_data[CONF_BASIC_AUTH_USER] = data.pop(CONF_BASIC_AUTH_USER, None)
+            new_data[CONF_BASIC_AUTH_PASS] = data.pop(CONF_BASIC_AUTH_PASS, None)
+            new_data[CONF_ADMIN_SECRET] = data.pop(CONF_ADMIN_SECRET, None)
+            self.hass.config_entries.async_update_entry(
+                self._config_entry, data=new_data
+            )
+
             return self.async_create_entry(title="", data=data)
 
-        host = self._config_entry.data[CONF_HOST]
-        port = self._config_entry.data[CONF_PORT]
+        url = self._config_entry.data[CONF_URL]
+        basic_auth_user = self._config_entry.data.get(CONF_BASIC_AUTH_USER)
+        basic_auth_pass = self._config_entry.data.get(CONF_BASIC_AUTH_PASS)
+        auth = None
+        if basic_auth_user and basic_auth_pass:
+            auth = aiohttp.BasicAuth(basic_auth_user, basic_auth_pass)
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.get(
-                    f"http://{host}:{port}/api/chats",
+                    f"{url}/api/chats",
+                    auth=auth,
                     timeout=aiohttp.ClientTimeout(total=5),
                 ) as resp:
                     self._chats = await resp.json() if resp.status == 200 else []
@@ -135,7 +180,9 @@ class MarinaraOptionsFlow(OptionsFlow):
         current_cats = self._config_entry.options.get(
             CONF_ENABLED_CATEGORIES, DEFAULT_ENABLED_CATEGORIES
         )
-        current_admin_secret = self._config_entry.options.get(CONF_ADMIN_SECRET, "")
+        current_admin_secret = self._config_entry.data.get(CONF_ADMIN_SECRET, "")
+        current_basic_auth_user = self._config_entry.data.get(CONF_BASIC_AUTH_USER, "")
+        current_basic_auth_pass = self._config_entry.data.get(CONF_BASIC_AUTH_PASS, "")
 
         schema = vol.Schema(
             {
@@ -156,7 +203,15 @@ class MarinaraOptionsFlow(OptionsFlow):
                         mode=SelectSelectorMode.LIST,
                     )
                 ),
-                vol.Optional(CONF_ADMIN_SECRET, default=current_admin_secret): str,
+                vol.Optional(
+                    CONF_BASIC_AUTH_USER, default=current_basic_auth_user or ""
+                ): TextSelector(TextSelectorConfig(type=TextSelectorType.TEXT)),
+                vol.Optional(
+                    CONF_BASIC_AUTH_PASS, default=current_basic_auth_pass or ""
+                ): TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD)),
+                vol.Optional(
+                    CONF_ADMIN_SECRET, default=current_admin_secret or ""
+                ): TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD)),
             }
         )
 

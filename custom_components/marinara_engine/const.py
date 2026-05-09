@@ -9,16 +9,22 @@ if TYPE_CHECKING:
 
 DOMAIN = "marinara_engine"
 
-DEFAULT_HOST = "localhost"
-DEFAULT_PORT = 3000
+DEFAULT_URL = "http://localhost:7860"
 SCAN_INTERVAL = 30  # seconds
 
-CONF_HOST = "host"
-CONF_PORT = "port"
+CONF_URL = "url"
 CONF_WEBHOOK_ID = "webhook_id"
 CONF_PRIMARY_CHAT_ID = "primary_chat_id"
 CONF_ENABLED_CATEGORIES = "enabled_categories"
+CONF_BASIC_AUTH_USER = "basic_auth_user"
+CONF_BASIC_AUTH_PASS = "basic_auth_pass"
 CONF_ADMIN_SECRET = "admin_secret"
+
+# Legacy constants kept for v1 → v2 migration
+CONF_HOST = "host"
+CONF_PORT = "port"
+DEFAULT_HOST = "localhost"
+DEFAULT_PORT = 7860
 
 CONTROLLABLE_DOMAINS: frozenset[str] = frozenset({
     "light", "switch", "climate", "cover", "media_player",

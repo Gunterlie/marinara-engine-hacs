@@ -2,7 +2,7 @@
 
 [![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz)
 
-Connects [Marinara Engine](https://github.com/Gunterlie/Marinara-Engine) to Home Assistant so your AI characters can control real-world devices — lights, climate, locks, covers, media players, and more — directly from chat, roleplay, and game sessions.
+Connects [Marinara Engine](https://github.com/Pasta-Devs/Marinara-Engine) to Home Assistant so your AI characters can control real-world devices — lights, climate, locks, covers, media players, and more — directly from chat, roleplay, and game sessions.
 
 ## How it works
 
@@ -23,7 +23,7 @@ Everything happens on first startup. You never copy URLs or configure tools manu
 
 - Home Assistant 2024.1 or newer
 - [HACS](https://hacs.xyz) installed
-- [Marinara Engine](https://github.com/Gunterlie/Marinara-Engine) running locally (default: `localhost:7860`)
+- [Marinara Engine](https://github.com/Pasta-Devs/Marinara-Engine) running locally or remotely
 
 ## Installation
 
@@ -39,8 +39,18 @@ Everything happens on first startup. You never copy URLs or configure tools manu
 
 1. Go to **Settings → Devices & Services → Add Integration**
 2. Search for **Marinara Engine**
-3. Enter the host and port where Marinara Engine is running (default: `localhost` / `7860`)
+3. Fill in the form:
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| **URL** | Yes | Marinara Engine URL, e.g. `http://localhost:7860` or `https://marinara.home.example.de` |
+| **Basic Auth User** | No | Only if `BASIC_AUTH_USER` is set in Marinara's `.env` |
+| **Basic Auth Password** | No | Only if `BASIC_AUTH_PASS` is set in Marinara's `.env`. Click the eye icon to reveal it. |
+| **Admin Secret** | No | Only if `ADMIN_SECRET` is set in Marinara's `.env`. Click the eye icon to reveal it. |
+
 4. Click **Submit**
+
+> **Tip:** If Marinara runs on the same machine as Home Assistant, use `http://localhost:7860` — loopback access bypasses all auth requirements.
 
 On startup, the integration automatically:
 - Registers a webhook inside Home Assistant
@@ -57,21 +67,39 @@ After setup, open the integration's **Configure** menu to:
 
 - Set a **Primary Chat** — the default target for `send_message` and `trigger_generation` HA services
 - Choose **Exposed Tool Categories** — select which categories of HA tools Marinara can use (locks are off by default)
-- Set an **Admin Secret** — required if you have `ADMIN_SECRET` set in Marinara's `.env` (see below)
+- Update **Basic Auth** or **Admin Secret** if you change them in Marinara
 
 Changes take effect immediately after saving — no HA restart needed.
 
-## Admin Secret
+## Authentication
 
-> **⚠️ Not working yet** — The Admin Secret flow is currently being debugged. If Marinara is on a non-loopback address and `ADMIN_SECRET` is set, Sync HA Tools will return 403. Workaround: run Marinara on the same machine as Home Assistant and access it via `localhost`.
+Marinara Engine has two layers of authentication for external access. Your integration only needs to send what Marinara actually requires.
 
-Marinara Engine requires an `ADMIN_SECRET` for privileged API calls (creating and updating tools) when accessed from a non-loopback address. If you see **403 Forbidden** errors when pressing **Sync HA Tools**, you need to configure this:
+### When is auth needed?
 
-1. Open Marinara's `.env` file and note the value of `ADMIN_SECRET`
-2. In HA, go to **Settings → Devices & Services → Marinara Engine → Configure**
-3. Enter the value in the **Admin Secret** field and save
+| Marinara setup | Basic Auth needed? | Admin Secret needed? |
+|----------------|-------------------|---------------------|
+| Same machine (`localhost`) | ❌ No | ❌ No (unless `MARINARA_REQUIRE_ADMIN_SECRET_ON_LOOPBACK=true`) |
+| LAN / Docker / Tailscale + `ALLOW_UNAUTHENTICATED_PRIVATE_NETWORK=true` | ❌ No | ✅ Yes |
+| `IP_ALLOWLIST` matches HA's IP | ❌ No | ✅ Yes |
+| `BASIC_AUTH_USER` + `BASIC_AUTH_PASS` configured | ✅ Yes | ✅ Yes |
+| Nothing configured, remote IP | ❌ Blocked | N/A |
 
-If Marinara runs on the same machine as Home Assistant and is accessed via `localhost`, no Admin Secret is needed.
+### Admin Secret
+
+Privileged endpoints (creating/updating tools and agents) require the `X-Admin-Secret` header when accessed from a non-loopback address. If you set `ADMIN_SECRET` in Marinara's `.env`, enter the same value in the integration.
+
+> **⚠️ Docker Compose users:** Do **not** wrap the secret in quotes:
+> ```yaml
+> # Correct
+> - ADMIN_SECRET=my_secret_value
+> # Wrong — literal quotes become part of the secret
+> - ADMIN_SECRET="my_secret_value"
+> ```
+
+### Basic Auth
+
+If Marinara has `BASIC_AUTH_USER` and `BASIC_AUTH_PASS` set, **every** request must include HTTP Basic Auth credentials. The integration sends them automatically on all API calls.
 
 ## Entities
 
@@ -181,8 +209,15 @@ Press **Marinara Sync HA Tools** on the integration's device page to push any mi
 
 ## Troubleshooting
 
+**Cannot connect on setup**
+Make sure Marinara Engine is running and the URL you entered is reachable from Home Assistant. Try `curl http://marinara:7860/api/health` from the HA container.
+
 **Sync HA Tools returns 403 Forbidden**
-Marinara's API requires authentication for write operations from non-loopback addresses. Set `ADMIN_SECRET` in Marinara's `.env`, then enter the same value in the integration's **Configure → Admin Secret** field.
+Marinara's privileged API requires both Basic Auth (if configured) and `X-Admin-Secret` from non-loopback addresses.
+
+1. Check that **Admin Secret** is set in the integration (matching `ADMIN_SECRET` in Marinara's `.env`)
+2. If `BASIC_AUTH_USER/PASS` is set in Marinara, enter them in the integration too
+3. If Marinara and HA run on the same machine, use `http://localhost:7860` as the URL to bypass auth requirements
 
 **Tools not appearing in Marinara's Custom Tools**
 Press **Marinara Sync HA Tools**, or restart Home Assistant. Verify under **Settings → Custom Tools** in Marinara.
@@ -195,9 +230,6 @@ The **Home Assistant** agent must be enabled in Marinara (Agents list). If it's 
 
 **Webhook calls failing**
 Check that Home Assistant is reachable from the machine running Marinara Engine. If they run on the same machine, the internal URL (`http://localhost:8123`) is used automatically. If Marinara runs on a different device, make sure HA's local network URL is accessible from that device.
-
-**Cannot connect on setup**
-Make sure Marinara Engine is running (`pnpm dev` or the packaged app) and the host/port you entered match where it's actually listening (default: `localhost:7860`).
 
 **Finding the webhook URL manually**
 Go to **Settings → Devices & Services → Marinara Engine** in HA. The webhook ID is stored in the config entry. The full URL follows the pattern:
