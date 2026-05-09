@@ -169,6 +169,7 @@ Send a message to a Marinara chat. Accepts chat name or chat ID as target.
 |-------|----------|-------------|
 | `message` | Yes | Message content |
 | `target` | No | Chat ID or chat name (defaults to primary chat) |
+| `role` | No | `user` / `assistant` / `system` / `narrator`. Defaults to `user`. Note: Conversation mode only supports `user` and `assistant` |
 | `trigger_generation` | No | Also trigger an AI response (default: false) |
 
 **Example — send a quick message from Developer Tools:**
@@ -177,6 +178,7 @@ service: notify.marinara_engine
 data:
   message: "Someone just arrived at the front door."
   target: "Dave RP"
+  role: "system"
   trigger_generation: true
 ```
 

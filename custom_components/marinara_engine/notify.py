@@ -71,7 +71,11 @@ class MarinaraNotifyEntity(NotifyEntity):
         return self._entry.options.get(CONF_PRIMARY_CHAT_ID)
 
     async def async_send_message(self, message: str, **kwargs) -> None:
-        """Send a message to a Marinara chat."""
+        """Send a message to a Marinara chat.
+
+        Supports role parameter: user, assistant, system, narrator.
+        Defaults to user. Falls back to user if invalid role provided.
+        """
         target = kwargs.get("target")
         chat_id = self._resolve_chat_id(target)
 
@@ -81,7 +85,18 @@ class MarinaraNotifyEntity(NotifyEntity):
             )
             return
 
-        await self.coordinator.send_message(chat_id, message)
+        role = kwargs.get("role", "user")
+        valid_roles = {"user", "assistant", "system", "narrator"}
+        if role not in valid_roles:
+            _LOGGER.warning(
+                "marinara_engine.notify: invalid role '%s', falling back to 'user'. "
+                "Valid roles: %s",
+                role,
+                ", ".join(valid_roles),
+            )
+            role = "user"
+
+        await self.coordinator.send_message(chat_id, message, role=role)
 
         # Optionally trigger generation if requested
         if kwargs.get("trigger_generation"):
