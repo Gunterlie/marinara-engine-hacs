@@ -11,7 +11,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.network import NoURLAvailableError, get_url
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import CONF_ENABLED_CATEGORIES, CONF_WEBHOOK_ID, DEFAULT_ENABLED_CATEGORIES, DOMAIN
+from .const import CONF_ENABLED_CATEGORIES, CONF_INCLUDE_DEVICE_LIST, CONF_WEBHOOK_ID, DEFAULT_ENABLED_CATEGORIES, DOMAIN
 from .coordinator import MarinaraCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -90,12 +90,13 @@ class MarinaraSyncToolsButton(_MarinaraEntity, ButtonEntity):
         enabled_categories = self._entry.options.get(
             CONF_ENABLED_CATEGORIES, DEFAULT_ENABLED_CATEGORIES
         )
+        include_device_list = self._entry.options.get(CONF_INCLUDE_DEVICE_LIST, False)
         try:
             created, updated = await self.coordinator.sync_tools(webhook_url, enabled_categories)
             _LOGGER.info(
                 "Marinara tool sync: %d created, %d updated", created, updated
             )
-            agent_status = await self.coordinator.sync_agent(enabled_categories)
+            agent_status = await self.coordinator.sync_agent(enabled_categories, include_device_list=include_device_list)
             if agent_status != "unchanged":
                 _LOGGER.info("Marinara tool sync: Home Assistant agent %s", agent_status)
             # Update last_sync timestamp in coordinator data

@@ -202,7 +202,7 @@ class MarinaraCoordinator(DataUpdateCoordinator[dict]):
             ) as resp:
                 resp.raise_for_status()
 
-    async def sync_agent(self, enabled_categories: list[str]) -> str:
+    async def sync_agent(self, enabled_categories: list[str], include_device_list: bool = False) -> str:
         """Create or update the Home Assistant agent in Marinara.
 
         Returns "created", "updated", or "unchanged".
@@ -210,7 +210,7 @@ class MarinaraCoordinator(DataUpdateCoordinator[dict]):
         from .const import build_agent_prompt, tools_for_categories
 
         tool_names = [t["name"] for t in tools_for_categories(enabled_categories)]
-        prompt = build_agent_prompt(self.hass)
+        prompt = build_agent_prompt(self.hass, include_device_list=include_device_list)
 
         async with aiohttp.ClientSession() as session:
             timeout = aiohttp.ClientTimeout(total=10)

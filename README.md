@@ -67,7 +67,10 @@ After setup, open the integration's **Configure** menu to:
 
 - Set a **Primary Chat** — the default target for `send_message` and `trigger_generation` HA services
 - Choose **Exposed Tool Categories** — select which categories of HA tools Marinara can use (locks are off by default)
+- **Include device list in agent prompt** — embeds your Home Assistant device catalog directly into the AI prompt. Off by default to save tokens. If you have many devices, leave this off and the AI will query on demand instead
 - Update **Basic Auth** or **Admin Secret** if you change them in Marinara
+
+> **Token usage warning:** Enabling "Include device list" can consume hundreds of extra tokens per AI message (50 devices ≈ 1,500 tokens). Only enable it if you have a small home or want to reduce tool calls.
 
 Changes take effect immediately after saving — no HA restart needed.
 

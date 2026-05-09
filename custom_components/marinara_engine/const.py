@@ -19,6 +19,7 @@ CONF_ENABLED_CATEGORIES = "enabled_categories"
 CONF_BASIC_AUTH_USER = "basic_auth_user"
 CONF_BASIC_AUTH_PASS = "basic_auth_pass"
 CONF_ADMIN_SECRET = "admin_secret"
+CONF_INCLUDE_DEVICE_LIST = "include_device_list"
 
 # Legacy constants kept for v1 → v2 migration
 CONF_HOST = "host"
@@ -527,8 +528,38 @@ unless no dedicated tool fits.
 """
 
 
-def build_agent_prompt(hass: HomeAssistant) -> str:
-    """Build a dynamic agent prompt containing the live entity catalog."""
+_AGENT_GUIDELINES_MINIMAL = """\
+Guidelines:
+- Execute commands directly when the user asks. \
+"Turn on the office lights" → call ha_turn_on after discovering the entity.
+- Use ha_list_entities or ha_search_entities to find devices by name or domain.
+- Use area_name instead of individual entity_ids when you want to control all devices \
+in a room at once.
+- If you don't know the exact area name, call ha_list_areas first, then act.
+- Prefer specific tools (ha_set_brightness, ha_set_color) over ha_call_service \
+unless no dedicated tool fits.
+- Do not invent entity IDs. Always query first if unsure.
+- Report errors clearly so the user can correct them.
+"""
+
+
+def build_agent_prompt(hass: HomeAssistant, include_device_list: bool = False) -> str:
+    """Build a dynamic agent prompt.
+
+    Args:
+        hass: Home Assistant instance.
+        include_device_list: If True, embed the full device catalog in the prompt.
+            Uses more tokens but saves one tool call per interaction.
+            If False, the AI queries devices on demand. Default: False.
+    """
+    if not include_device_list:
+        return (
+            "You are a Home Assistant controller. "
+            "You control a smart home. Use ha_list_entities or ha_search_entities "
+            "to discover available devices when needed.\n\n"
+            + _AGENT_GUIDELINES_MINIMAL
+        )
+
     from homeassistant.helpers import area_registry as ar_helper
     from homeassistant.helpers import entity_registry as er_helper
 
@@ -540,8 +571,13 @@ def build_agent_prompt(hass: HomeAssistant) -> str:
 
     area_entities: dict[str, list[str]] = {name: [] for name in area_names.values()}
     unassigned: list[str] = []
+    device_count = 0
+    max_devices = 50
 
     for state in hass.states.async_all():
+        if device_count >= max_devices:
+            break
+
         domain = state.entity_id.split(".")[0]
         if domain not in CONTROLLABLE_DOMAINS:
             continue
@@ -571,6 +607,8 @@ def build_agent_prompt(hass: HomeAssistant) -> str:
                 unassigned.append(line)
         else:
             unassigned.append(line)
+
+        device_count += 1
 
     sections: list[str] = [
         "You are a Home Assistant controller.",

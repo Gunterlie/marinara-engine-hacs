@@ -17,6 +17,7 @@ from .const import (
     CONF_BASIC_AUTH_USER,
     CONF_ENABLED_CATEGORIES,
     CONF_HOST,
+    CONF_INCLUDE_DEVICE_LIST,
     CONF_PORT,
     CONF_PRIMARY_CHAT_ID,
     CONF_URL,
@@ -113,8 +114,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Auto-sync HA tools into Marinara on every startup (idempotent — skips existing)
     enabled_categories = entry.options.get(CONF_ENABLED_CATEGORIES, DEFAULT_ENABLED_CATEGORIES)
+    include_device_list = entry.options.get(CONF_INCLUDE_DEVICE_LIST, False)
     hass.async_create_task(
-        _async_sync_tools(hass, coordinator, webhook_id, enabled_categories)
+        _async_sync_tools(hass, coordinator, webhook_id, enabled_categories, include_device_list)
     )
 
     return True
@@ -125,6 +127,7 @@ async def _async_sync_tools(
     coordinator: MarinaraCoordinator,
     webhook_id: str,
     enabled_categories: list[str],
+    include_device_list: bool = False,
 ) -> None:
     from homeassistant.helpers.network import NoURLAvailableError, get_url
 
@@ -141,7 +144,7 @@ async def _async_sync_tools(
             created,
             updated,
         )
-        agent_status = await coordinator.sync_agent(enabled_categories)
+        agent_status = await coordinator.sync_agent(enabled_categories, include_device_list=include_device_list)
         if agent_status != "unchanged":
             _LOGGER.info("Marinara Engine: Home Assistant agent %s", agent_status)
     except Exception as err:

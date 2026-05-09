@@ -28,7 +28,8 @@
           "enabled_categories": "Exposed Tool Categories",
           "basic_auth_user": "Basic Auth User",
           "basic_auth_pass": "Basic Auth Password",
-          "admin_secret": "Admin Secret"
+          "admin_secret": "Admin Secret",
+          "include_device_list": "Include device list in agent prompt"
         },
         "description": "Configure Marinara Engine integration options."
       }

@@ -12,6 +12,7 @@ from homeassistant.config_entries import ConfigEntry, ConfigFlow, OptionsFlow
 from homeassistant.core import callback
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers.selector import (
+    BooleanSelector,
     SelectOptionDict,
     SelectSelector,
     SelectSelectorConfig,
@@ -26,6 +27,7 @@ from .const import (
     CONF_BASIC_AUTH_PASS,
     CONF_BASIC_AUTH_USER,
     CONF_ENABLED_CATEGORIES,
+    CONF_INCLUDE_DEVICE_LIST,
     CONF_PRIMARY_CHAT_ID,
     CONF_URL,
     CONF_WEBHOOK_ID,
@@ -183,6 +185,7 @@ class MarinaraOptionsFlow(OptionsFlow):
         current_admin_secret = self._config_entry.data.get(CONF_ADMIN_SECRET, "")
         current_basic_auth_user = self._config_entry.data.get(CONF_BASIC_AUTH_USER, "")
         current_basic_auth_pass = self._config_entry.data.get(CONF_BASIC_AUTH_PASS, "")
+        current_include_device_list = self._config_entry.options.get(CONF_INCLUDE_DEVICE_LIST, False)
 
         schema = vol.Schema(
             {
@@ -212,6 +215,9 @@ class MarinaraOptionsFlow(OptionsFlow):
                 vol.Optional(
                     CONF_ADMIN_SECRET, default=current_admin_secret or ""
                 ): TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD)),
+                vol.Optional(
+                    CONF_INCLUDE_DEVICE_LIST, default=current_include_device_list
+                ): BooleanSelector(),
             }
         )
 
