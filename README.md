@@ -2,6 +2,8 @@
 
 [![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz)
 
+> **ATTENTION / ACHTUNG: This integration is currently Vibecoded and possibly not safe for production use.**
+
 Connects [Marinara Engine](https://github.com/Pasta-Devs/Marinara-Engine) to Home Assistant so your AI characters can control real-world devices — lights, climate, locks, covers, media players, and more — directly from chat, roleplay, and game sessions.
 
 ## How it works
