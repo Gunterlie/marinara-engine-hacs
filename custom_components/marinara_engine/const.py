@@ -32,6 +32,9 @@ CONTROLLABLE_DOMAINS: frozenset[str] = frozenset({
     "lock", "fan", "vacuum", "scene", "script", "alarm_control_panel",
 })
 
+# Categories exposed to the lightweight agent (fast, token-cheap).
+LIGHT_AGENT_CATEGORIES: list[str] = ["lights", "climate", "query"]
+
 TOOL_CATEGORIES: dict[str, str] = {
     "lights": "Lights & Switches",
     "climate": "Climate",
@@ -543,7 +546,9 @@ unless no dedicated tool fits.
 """
 
 
-def build_agent_prompt(hass: HomeAssistant, include_device_list: bool = False) -> str:
+def build_agent_prompt(
+    hass: HomeAssistant, include_device_list: bool = False, notify_targets: list[str] | None = None
+) -> str:
     """Build a dynamic agent prompt.
 
     Args:
@@ -551,14 +556,21 @@ def build_agent_prompt(hass: HomeAssistant, include_device_list: bool = False) -
         include_device_list: If True, embed the full device catalog in the prompt.
             Uses more tokens but saves one tool call per interaction.
             If False, the AI queries devices on demand. Default: False.
+        notify_targets: Optional list of available notify service targets
+            (e.g. ["notify.mobile_app_iphone", "notify.telegram"]).
     """
     if not include_device_list:
-        return (
+        result = (
             "You are a Home Assistant controller. "
             "You control a smart home. Use ha_list_entities or ha_search_entities "
             "to discover available devices when needed.\n\n"
             + _AGENT_GUIDELINES_MINIMAL
         )
+        if notify_targets:
+            result += "\n\n## Notification targets\n" + "\n".join(
+                f"- {t}" for t in notify_targets
+            )
+        return result
 
     from homeassistant.helpers import area_registry as ar_helper
     from homeassistant.helpers import entity_registry as er_helper
@@ -630,5 +642,11 @@ def build_agent_prompt(hass: HomeAssistant, include_device_list: bool = False) -
         sections.append("")
 
     sections.append(_AGENT_GUIDELINES)
+
+    if notify_targets:
+        sections.append("## Notification targets")
+        for target in notify_targets:
+            sections.append(f"- {target}")
+        sections.append("")
 
     return "\n".join(sections)

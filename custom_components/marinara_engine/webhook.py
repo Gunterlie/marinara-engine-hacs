@@ -56,14 +56,25 @@ async def _handle_webhook(
 
     try:
         result = await handler(hass, args)
+    except ValueError as err:
+        # User-facing error (bad entity_id, missing args, etc.) → 400
+        _LOGGER.warning("Marinara webhook: tool '%s' rejected input: %s", tool, err)
+        return web.json_response({"error": str(err)}, status=400)
     except Exception as err:
-        _LOGGER.error("Marinara webhook: tool '%s' failed: %s", tool, err)
-        return web.json_response({"error": str(err)}, status=500)
+        # Internal error → 500, but never crash the webhook
+        _LOGGER.exception("Marinara webhook: tool '%s' failed unexpectedly", tool)
+        return web.json_response(
+            {"error": f"Internal error in {tool}: {err}"}, status=500
+        )
 
-    hass.bus.async_fire(
-        f"{DOMAIN}_tool_called",
-        {"tool": tool, "arguments": args, "result": result},
-    )
+    try:
+        hass.bus.async_fire(
+            f"{DOMAIN}_tool_called",
+            {"tool": tool, "arguments": args, "result": result},
+        )
+    except Exception:
+        _LOGGER.exception("Failed to fire marinara_engine_tool_called event")
+
     return web.json_response(result)
 
 

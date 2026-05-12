@@ -99,6 +99,9 @@ class MarinaraSyncToolsButton(_MarinaraEntity, ButtonEntity):
             agent_status = await self.coordinator.sync_agent(enabled_categories, include_device_list=include_device_list)
             if agent_status != "unchanged":
                 _LOGGER.info("Marinara tool sync: Home Assistant agent %s", agent_status)
+            light_status = await self.coordinator.sync_light_agent(include_device_list=include_device_list)
+            if light_status != "unchanged":
+                _LOGGER.info("Marinara tool sync: Home Assistant Light agent %s", light_status)
             # Update last_sync timestamp in coordinator data
             from datetime import datetime, timezone
             if self.coordinator.data is not None:

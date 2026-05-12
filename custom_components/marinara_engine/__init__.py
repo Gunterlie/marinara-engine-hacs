@@ -98,8 +98,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         basic_auth_pass=entry.data.get(CONF_BASIC_AUTH_PASS) or None,
         admin_secret=entry.data.get(CONF_ADMIN_SECRET) or None,
     )
-    await coordinator.async_verify_connection()
-    await coordinator.async_config_entry_first_refresh()
+
+    # Try to connect but don't let it block setup — integration will
+    # show entities as unavailable and retry in the background.
+    try:
+        await coordinator.async_verify_connection()
+        await coordinator.async_config_entry_first_refresh()
+    except Exception as err:
+        _LOGGER.warning(
+            "Marinara Engine at %s is unreachable during setup: %s. "
+            "Entities will show as unavailable until the server comes online.",
+            entry.data[CONF_URL],
+            err,
+        )
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
 
@@ -147,6 +158,9 @@ async def _async_sync_tools(
         agent_status = await coordinator.sync_agent(enabled_categories, include_device_list=include_device_list)
         if agent_status != "unchanged":
             _LOGGER.info("Marinara Engine: Home Assistant agent %s", agent_status)
+        light_status = await coordinator.sync_light_agent(include_device_list=include_device_list)
+        if light_status != "unchanged":
+            _LOGGER.info("Marinara Engine: Home Assistant Light agent %s", light_status)
     except Exception as err:
         _LOGGER.warning("Marinara Engine: could not auto-sync tools: %s", err)
 

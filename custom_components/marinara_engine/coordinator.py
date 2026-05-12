@@ -114,7 +114,11 @@ class MarinaraCoordinator(DataUpdateCoordinator[dict]):
         return {}
 
     async def async_verify_connection(self) -> None:
-        """Raise ConfigEntryNotReady if the server is unreachable."""
+        """Verify connectivity to Marinara Engine.
+
+        Raises ConfigEntryNotReady on failure so HA retries setup later.
+        Callers should catch this if they want to continue regardless.
+        """
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.get(
@@ -130,41 +134,53 @@ class MarinaraCoordinator(DataUpdateCoordinator[dict]):
 
     async def send_message(self, chat_id: str, content: str, role: str = "user") -> None:
         """POST a message to a chat."""
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                f"{self.base_url}/api/chats/{chat_id}/messages",
-                auth=self._basic_auth,
-                json={"chatId": chat_id, "role": role, "content": content, "characterId": None},
-                timeout=aiohttp.ClientTimeout(total=10),
-            ) as resp:
-                resp.raise_for_status()
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    f"{self.base_url}/api/chats/{chat_id}/messages",
+                    auth=self._basic_auth,
+                    json={"chatId": chat_id, "role": role, "content": content, "characterId": None},
+                    timeout=aiohttp.ClientTimeout(total=10),
+                ) as resp:
+                    resp.raise_for_status()
+        except Exception:
+            _LOGGER.exception("Failed to send message to Marinara chat %s", chat_id)
+            raise
 
     async def trigger_generation(
         self, chat_id: str, user_message: str | None = None
     ) -> None:
         """Start AI generation for a chat (fire-and-forget, non-streaming)."""
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                f"{self.base_url}/api/generate",
-                auth=self._basic_auth,
-                json={
-                    "chatId": chat_id,
-                    "userMessage": user_message,
-                    "streaming": False,
-                },
-                timeout=aiohttp.ClientTimeout(total=120),
-            ) as resp:
-                resp.raise_for_status()
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    f"{self.base_url}/api/generate",
+                    auth=self._basic_auth,
+                    json={
+                        "chatId": chat_id,
+                        "userMessage": user_message,
+                        "streaming": False,
+                    },
+                    timeout=aiohttp.ClientTimeout(total=120),
+                ) as resp:
+                    resp.raise_for_status()
+        except Exception:
+            _LOGGER.exception("Failed to trigger generation in Marinara chat %s", chat_id)
+            raise
 
     async def abort_generation(self) -> None:
         """Cancel any in-flight generation."""
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                f"{self.base_url}/api/generate/abort",
-                auth=self._basic_auth,
-                timeout=aiohttp.ClientTimeout(total=5),
-            ) as resp:
-                resp.raise_for_status()
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    f"{self.base_url}/api/generate/abort",
+                    auth=self._basic_auth,
+                    timeout=aiohttp.ClientTimeout(total=5),
+                ) as resp:
+                    resp.raise_for_status()
+        except Exception:
+            _LOGGER.exception("Failed to abort Marinara generation")
+            raise
 
     async def _update_ui_settings(self, patch: dict) -> None:
         async with aiohttp.ClientSession() as session:
@@ -206,71 +222,176 @@ class MarinaraCoordinator(DataUpdateCoordinator[dict]):
         """Create or update the Home Assistant agent in Marinara.
 
         Returns "created", "updated", or "unchanged".
+        On error logs and re-raises so the caller decides what to do.
         """
         from .const import build_agent_prompt, tools_for_categories
 
         tool_names = [t["name"] for t in tools_for_categories(enabled_categories)]
-        prompt = build_agent_prompt(self.hass, include_device_list=include_device_list)
 
-        async with aiohttp.ClientSession() as session:
-            timeout = aiohttp.ClientTimeout(total=10)
+        # Collect available notify services so the agent knows its targets
+        notify_targets: list[str] = []
+        try:
+            services = self.hass.services.async_services()
+            notify_targets = [
+                f"notify.{name}" for name in services.get("notify", {}).keys()
+            ]
+        except Exception:
+            _LOGGER.debug("Could not enumerate notify services")
 
-            async with session.get(
-                f"{self.base_url}/api/agents", auth=self._basic_auth, timeout=timeout
-            ) as resp:
-                resp.raise_for_status()
-                agents = await resp.json()
+        prompt = build_agent_prompt(
+            self.hass, include_device_list=include_device_list, notify_targets=notify_targets
+        )
 
-            existing = next(
-                (a for a in agents if a.get("type") == "home_assistant"), None
-            )
+        try:
+            async with aiohttp.ClientSession() as session:
+                timeout = aiohttp.ClientTimeout(total=10)
 
-            if existing is not None:
-                settings = existing.get("settings") or {}
-                if isinstance(settings, str):
-                    settings = json.loads(settings)
-                current_tools = settings.get("enabledTools", [])
-                current_prompt = existing.get("promptTemplate", "")
-                tools_match = set(current_tools) == set(tool_names)
-                prompt_match = current_prompt == prompt
-                if tools_match and prompt_match:
-                    return "unchanged"
-                async with session.patch(
-                    f"{self.base_url}/api/agents/{existing['id']}",
+                async with session.get(
+                    f"{self.base_url}/api/agents", auth=self._basic_auth, timeout=timeout
+                ) as resp:
+                    resp.raise_for_status()
+                    agents = await resp.json()
+
+                existing = next(
+                    (a for a in agents if a.get("type") == "home_assistant"), None
+                )
+
+                if existing is not None:
+                    settings = existing.get("settings") or {}
+                    if isinstance(settings, str):
+                        settings = json.loads(settings)
+                    current_tools = settings.get("enabledTools", [])
+                    current_prompt = existing.get("promptTemplate", "")
+                    tools_match = set(current_tools) == set(tool_names)
+                    prompt_match = current_prompt == prompt
+                    if tools_match and prompt_match:
+                        return "unchanged"
+                    async with session.patch(
+                        f"{self.base_url}/api/agents/{existing['id']}",
+                        auth=self._basic_auth,
+                        json={
+                            "settings": {"enabledTools": tool_names},
+                            "promptTemplate": prompt,
+                        },
+                        headers=self._privileged_headers,
+                        timeout=timeout,
+                    ) as resp:
+                        resp.raise_for_status()
+                    return "updated"
+
+                payload = {
+                    "type": "home_assistant",
+                    "name": "Home Assistant",
+                    "description": (
+                        "Controls Home Assistant smart home devices — lights, climate, "
+                        "covers, locks, media players, scenes, and scripts."
+                    ),
+                    "phase": "parallel",
+                    "enabled": True,
+                    "connectionId": None,
+                    "promptTemplate": prompt,
+                    "settings": {"enabledTools": tool_names},
+                }
+                async with session.post(
+                    f"{self.base_url}/api/agents",
                     auth=self._basic_auth,
-                    json={
-                        "settings": {"enabledTools": tool_names},
-                        "promptTemplate": prompt,
-                    },
+                    json=payload,
                     headers=self._privileged_headers,
                     timeout=timeout,
                 ) as resp:
                     resp.raise_for_status()
-                return "updated"
 
-            payload = {
-                "type": "home_assistant",
-                "name": "Home Assistant",
-                "description": (
-                    "Controls Home Assistant smart home devices — lights, climate, "
-                    "covers, locks, media players, scenes, and scripts."
-                ),
-                "phase": "parallel",
-                "enabled": True,
-                "connectionId": None,
-                "promptTemplate": prompt,
-                "settings": {"enabledTools": tool_names},
-            }
-            async with session.post(
-                f"{self.base_url}/api/agents",
-                auth=self._basic_auth,
-                json=payload,
-                headers=self._privileged_headers,
-                timeout=timeout,
-            ) as resp:
-                resp.raise_for_status()
+            return "created"
+        except Exception:
+            _LOGGER.exception("Failed to sync Marinara agent")
+            raise
 
-        return "created"
+    async def sync_light_agent(self, include_device_list: bool = False) -> str:
+        """Create or update the lightweight Home Assistant agent in Marinara.
+
+        This agent exposes only lights, climate, and query tools for faster,
+        cheaper responses. Returns "created", "updated", or "unchanged".
+        """
+        from .const import LIGHT_AGENT_CATEGORIES, build_agent_prompt, tools_for_categories
+
+        tool_names = [t["name"] for t in tools_for_categories(LIGHT_AGENT_CATEGORIES)]
+
+        notify_targets: list[str] = []
+        try:
+            services = self.hass.services.async_services()
+            notify_targets = [
+                f"notify.{name}" for name in services.get("notify", {}).keys()
+            ]
+        except Exception:
+            _LOGGER.debug("Could not enumerate notify services")
+
+        prompt = build_agent_prompt(
+            self.hass, include_device_list=include_device_list, notify_targets=notify_targets
+        )
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                timeout = aiohttp.ClientTimeout(total=10)
+
+                async with session.get(
+                    f"{self.base_url}/api/agents", auth=self._basic_auth, timeout=timeout
+                ) as resp:
+                    resp.raise_for_status()
+                    agents = await resp.json()
+
+                existing = next(
+                    (a for a in agents if a.get("type") == "home_assistant_light"), None
+                )
+
+                if existing is not None:
+                    settings = existing.get("settings") or {}
+                    if isinstance(settings, str):
+                        settings = json.loads(settings)
+                    current_tools = settings.get("enabledTools", [])
+                    current_prompt = existing.get("promptTemplate", "")
+                    tools_match = set(current_tools) == set(tool_names)
+                    prompt_match = current_prompt == prompt
+                    if tools_match and prompt_match:
+                        return "unchanged"
+                    async with session.patch(
+                        f"{self.base_url}/api/agents/{existing['id']}",
+                        auth=self._basic_auth,
+                        json={
+                            "settings": {"enabledTools": tool_names},
+                            "promptTemplate": prompt,
+                        },
+                        headers=self._privileged_headers,
+                        timeout=timeout,
+                    ) as resp:
+                        resp.raise_for_status()
+                    return "updated"
+
+                payload = {
+                    "type": "home_assistant_light",
+                    "name": "Home Assistant Light",
+                    "description": (
+                        "Lightweight Home Assistant controller for fast responses. "
+                        "Controls lights, climate, and basic queries only."
+                    ),
+                    "phase": "parallel",
+                    "enabled": True,
+                    "connectionId": None,
+                    "promptTemplate": prompt,
+                    "settings": {"enabledTools": tool_names},
+                }
+                async with session.post(
+                    f"{self.base_url}/api/agents",
+                    auth=self._basic_auth,
+                    json=payload,
+                    headers=self._privileged_headers,
+                    timeout=timeout,
+                ) as resp:
+                    resp.raise_for_status()
+
+            return "created"
+        except Exception:
+            _LOGGER.exception("Failed to sync Marinara light agent")
+            raise
 
     async def sync_tools(
         self, webhook_url: str, enabled_categories: list[str]
@@ -284,48 +405,52 @@ class MarinaraCoordinator(DataUpdateCoordinator[dict]):
 
         tools = tools_for_categories(enabled_categories)
 
-        async with aiohttp.ClientSession() as session:
-            timeout = aiohttp.ClientTimeout(total=10)
+        try:
+            async with aiohttp.ClientSession() as session:
+                timeout = aiohttp.ClientTimeout(total=10)
 
-            async with session.get(
-                f"{self.base_url}/api/custom-tools", auth=self._basic_auth, timeout=timeout
-            ) as resp:
-                resp.raise_for_status()
-                existing = await resp.json()
+                async with session.get(
+                    f"{self.base_url}/api/custom-tools", auth=self._basic_auth, timeout=timeout
+                ) as resp:
+                    resp.raise_for_status()
+                    existing = await resp.json()
 
-            existing_by_name = {t["name"]: t for t in existing}
+                existing_by_name = {t["name"]: t for t in existing}
 
-            created = 0
-            updated = 0
-            for tool in tools:
-                payload = {
-                    "name": tool["name"],
-                    "description": tool["description"],
-                    "parametersSchema": tool["parametersSchema"],
-                    "executionType": "webhook",
-                    "webhookUrl": webhook_url,
-                    "enabled": True,
-                }
-                if tool["name"] in existing_by_name:
-                    tool_id = existing_by_name[tool["name"]]["id"]
-                    async with session.patch(
-                        f"{self.base_url}/api/custom-tools/{tool_id}",
-                        auth=self._basic_auth,
-                        json=payload,
-                        headers=self._privileged_headers,
-                        timeout=timeout,
-                    ) as resp:
-                        resp.raise_for_status()
-                    updated += 1
-                else:
-                    async with session.post(
-                        f"{self.base_url}/api/custom-tools",
-                        auth=self._basic_auth,
-                        json=payload,
-                        headers=self._privileged_headers,
-                        timeout=timeout,
-                    ) as resp:
-                        resp.raise_for_status()
-                    created += 1
+                created = 0
+                updated = 0
+                for tool in tools:
+                    payload = {
+                        "name": tool["name"],
+                        "description": tool["description"],
+                        "parametersSchema": tool["parametersSchema"],
+                        "executionType": "webhook",
+                        "webhookUrl": webhook_url,
+                        "enabled": True,
+                    }
+                    if tool["name"] in existing_by_name:
+                        tool_id = existing_by_name[tool["name"]]["id"]
+                        async with session.patch(
+                            f"{self.base_url}/api/custom-tools/{tool_id}",
+                            auth=self._basic_auth,
+                            json=payload,
+                            headers=self._privileged_headers,
+                            timeout=timeout,
+                        ) as resp:
+                            resp.raise_for_status()
+                        updated += 1
+                    else:
+                        async with session.post(
+                            f"{self.base_url}/api/custom-tools",
+                            auth=self._basic_auth,
+                            json=payload,
+                            headers=self._privileged_headers,
+                            timeout=timeout,
+                        ) as resp:
+                            resp.raise_for_status()
+                        created += 1
 
-        return created, updated
+            return created, updated
+        except Exception:
+            _LOGGER.exception("Failed to sync Marinara tools")
+            raise

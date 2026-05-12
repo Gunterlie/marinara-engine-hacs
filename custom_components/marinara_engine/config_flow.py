@@ -104,21 +104,29 @@ class MarinaraConfigFlow(ConfigFlow, domain=DOMAIN):
 
             error = await _test_connection(url, basic_auth_user, basic_auth_pass)
             if error:
-                errors["base"] = error
-            else:
-                await self.async_set_unique_id(url)
-                self._abort_if_unique_id_configured()
-
-                return self.async_create_entry(
-                    title=f"Marinara Engine ({url})",
-                    data={
-                        CONF_URL: url,
-                        CONF_WEBHOOK_ID: async_generate_id(),
-                        CONF_BASIC_AUTH_USER: basic_auth_user,
-                        CONF_BASIC_AUTH_PASS: basic_auth_pass,
-                        CONF_ADMIN_SECRET: admin_secret,
-                    },
+                # Log the issue but still allow setup — the integration will
+                # retry connecting in the background.
+                _LOGGER.warning(
+                    "Marinara Engine at %s is not reachable during setup (%s). "
+                    "You can finish configuration now and the integration will "
+                    "connect automatically once the server is online.",
+                    url,
+                    error,
                 )
+
+            await self.async_set_unique_id(url)
+            self._abort_if_unique_id_configured()
+
+            return self.async_create_entry(
+                title=f"Marinara Engine ({url})",
+                data={
+                    CONF_URL: url,
+                    CONF_WEBHOOK_ID: async_generate_id(),
+                    CONF_BASIC_AUTH_USER: basic_auth_user,
+                    CONF_BASIC_AUTH_PASS: basic_auth_pass,
+                    CONF_ADMIN_SECRET: admin_secret,
+                },
+            )
 
         return self.async_show_form(
             step_id="user",
